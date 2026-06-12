@@ -1,4 +1,4 @@
 # TODO
-- [ ] Scaffolding per FOUNDATION.md (structure, docker, migration 001, common/)
+- [x] Scaffolding per FOUNDATION.md (structure, docker, migration 001, common/)
 - [ ] specs/01-tags.md — normalize() rules + cascade thresholds (discuss first)
 - [ ] Ingest: first provider feed parser
