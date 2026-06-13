@@ -121,7 +121,7 @@ def _seed_db(conn) -> tuple[int, dict[str, int]]:
     """Upsert provider/sites/feeds. Returns (provider_id, {site_slug: feed_id})."""
     provider_id = conn.execute(
         """
-        INSERT INTO providers (slug, name) VALUES (%s, %s)
+        INSERT INTO cat.providers (slug, name) VALUES (%s, %s)
         ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
         RETURNING id
         """,
@@ -132,7 +132,7 @@ def _seed_db(conn) -> tuple[int, dict[str, int]]:
     for s in _SITES:
         site_ids[s["slug"]] = conn.execute(
             """
-            INSERT INTO sites (provider_id, slug, domain) VALUES (%s, %s, %s)
+            INSERT INTO raw.sites (provider_id, slug, domain) VALUES (%s, %s, %s)
             ON CONFLICT (slug) DO UPDATE SET domain = EXCLUDED.domain
             RETURNING id
             """,
@@ -143,7 +143,7 @@ def _seed_db(conn) -> tuple[int, dict[str, int]]:
     for f in _FEEDS:
         feed_ids[f["site_slug"]] = conn.execute(
             """
-            INSERT INTO feeds
+            INSERT INTO raw.feeds
                 (site_id, feed_url, feed_format, has_header, max_limit, niche, sub_niche)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (site_id) DO UPDATE SET
@@ -163,7 +163,7 @@ def _seed_db(conn) -> tuple[int, dict[str, int]]:
 # --- ingest ---
 
 _UPSERT_SQL = """
-INSERT INTO raw_videos (
+INSERT INTO raw.raw_videos (
     provider_id, feed_id, external_id, title, description,
     duration_sec, target_url, thumb_url, tags_raw, performers_raw,
     published_at, payload

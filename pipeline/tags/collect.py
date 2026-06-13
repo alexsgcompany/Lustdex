@@ -1,4 +1,4 @@
-"""Scan raw_videos.tags_raw, normalize every tag, populate unmapped_tags.
+"""Scan raw.raw_videos.tags_raw, normalize every tag, populate raw.unmapped_tags.
 
 Run:  python -m pipeline.tags.collect
 """
@@ -19,20 +19,20 @@ _MAX_EXAMPLES = 5
 
 # Recount is idempotent: upsert replaces freq/providers/raw_examples each run.
 _UPSERT_PENDING = """
-INSERT INTO unmapped_tags (normalized, raw_examples, freq, providers)
+INSERT INTO raw.unmapped_tags (normalized, raw_examples, freq, providers)
 VALUES (%s, %s, %s, %s)
 ON CONFLICT (normalized) DO UPDATE SET
     freq         = EXCLUDED.freq,
     raw_examples = EXCLUDED.raw_examples,
     providers    = EXCLUDED.providers,
     -- re-open entries that were trashed by an old stoplist but are now pending
-    status       = CASE WHEN unmapped_tags.status = 'trash' THEN 'pending'
-                        ELSE unmapped_tags.status END,
+    status       = CASE WHEN raw.unmapped_tags.status = 'trash' THEN 'pending'
+                        ELSE raw.unmapped_tags.status END,
     updated_at   = now()
 """
 
 _UPSERT_TRASH = """
-INSERT INTO unmapped_tags (normalized, raw_examples, freq, status, providers)
+INSERT INTO raw.unmapped_tags (normalized, raw_examples, freq, status, providers)
 VALUES (%s, %s, %s, 'trash', %s)
 ON CONFLICT (normalized) DO UPDATE SET
     freq         = EXCLUDED.freq,
@@ -55,10 +55,10 @@ def main() -> None:
 
 def _run(conn, stats: dict) -> None:
     aliased: set[str] = {
-        row[0] for row in conn.execute("SELECT normalized FROM tag_aliases")
+        row[0] for row in conn.execute("SELECT normalized FROM cat.tag_aliases")
     }
 
-    rows = conn.execute("SELECT tags_raw, provider_id FROM raw_videos").fetchall()
+    rows = conn.execute("SELECT tags_raw, provider_id FROM raw.raw_videos").fetchall()
 
     # Accumulate counts keyed by normalized form
     pending_freq:     dict[str, int]        = defaultdict(int)

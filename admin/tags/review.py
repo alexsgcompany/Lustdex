@@ -1,6 +1,7 @@
 import re
 
 import streamlit as st
+
 from pipeline.common.db import get_conn
 from tags import queries
 
@@ -15,7 +16,7 @@ def render() -> None:
 
     # ── filters ──────────────────────────────────────────────────────────────
     with get_conn() as conn:
-        providers = conn.execute("SELECT id, name FROM providers ORDER BY name").fetchall()
+        providers = conn.execute("SELECT id, name FROM cat.providers ORDER BY name").fetchall()
         cats      = [r[0] for r in conn.execute(queries.DISTINCT_CATEGORIES).fetchall()]
 
     fc1, fc2, fc3 = st.columns(3)
@@ -86,7 +87,7 @@ def _render_actions(normalized, freq, cats, sug_id, sug_source, sug_conf, sug_na
     if top_col2.button("Trash", key=f"trash_{normalized}"):
         with get_conn() as conn:
             conn.execute(
-                "UPDATE unmapped_tags SET status='trash', updated_at=now() WHERE normalized=%s",
+                "UPDATE raw.unmapped_tags SET status='trash', updated_at=now() WHERE normalized=%s",
                 (normalized,),
             )
             conn.commit()
@@ -132,14 +133,17 @@ def _render_actions(normalized, freq, cats, sug_id, sug_source, sug_conf, sug_na
                     st.error("slug must match: lowercase, digits, hyphens only (e.g. my-tag)")
                 else:
                     with get_conn() as conn:
-                        existing = conn.execute("SELECT id FROM tags WHERE slug=%s", (slug,)).fetchone()
+                        existing = conn.execute(
+                            "SELECT id FROM cat.tags WHERE slug=%s", (slug,)
+                        ).fetchone()
                         if existing:
                             st.error(f"slug '{slug}' already exists — use Map to existing instead")
                         else:
                             name = name_input.strip() or slug.replace("-", " ").title()
                             cat  = cat_input or None
                             tag_id = conn.execute(
-                                "INSERT INTO tags (slug, name, category) VALUES (%s, %s, %s) RETURNING id",
+                                "INSERT INTO cat.tags (slug, name, category)"
+                                " VALUES (%s, %s, %s) RETURNING id",
                                 (slug, name, cat),
                             ).fetchone()[0]
                             conn.commit()
@@ -152,12 +156,12 @@ def _render_actions(normalized, freq, cats, sug_id, sug_source, sug_conf, sug_na
 def _resolve(normalized: str, tag_id: int, source: str, confidence: float) -> None:
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO tag_aliases (normalized, tag_id, source, confidence)"
+            "INSERT INTO cat.tag_aliases (normalized, tag_id, source, confidence)"
             " VALUES (%s, %s, %s, %s) ON CONFLICT (normalized) DO NOTHING",
             (normalized, tag_id, source, confidence),
         )
         conn.execute(
-            "UPDATE unmapped_tags SET status='resolved', updated_at=now() WHERE normalized=%s",
+            "UPDATE raw.unmapped_tags SET status='resolved', updated_at=now() WHERE normalized=%s",
             (normalized,),
         )
         conn.commit()

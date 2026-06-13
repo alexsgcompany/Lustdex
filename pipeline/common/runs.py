@@ -1,4 +1,4 @@
-"""Context manager that bookends a pipeline job with a pipeline_runs row."""
+"""Context manager that bookends a pipeline job with a raw.pipeline_runs row."""
 
 import traceback
 from contextlib import contextmanager
@@ -14,7 +14,7 @@ from pipeline.common.db import get_conn
 def pipeline_run(job: str) -> Generator[dict, None, None]:
     with get_conn() as conn:
         run_id = conn.execute(
-            "INSERT INTO pipeline_runs (job, status) VALUES (%s, 'running') RETURNING id",
+            "INSERT INTO raw.pipeline_runs (job, status) VALUES (%s, 'running') RETURNING id",
             (job,),
         ).fetchone()[0]
         conn.commit()
@@ -24,14 +24,16 @@ def pipeline_run(job: str) -> Generator[dict, None, None]:
         yield stats
         with get_conn() as conn:
             conn.execute(
-                "UPDATE pipeline_runs SET status='done', finished_at=now(), stats=%s WHERE id=%s",
+                "UPDATE raw.pipeline_runs SET status='done', finished_at=now(), stats=%s"
+                " WHERE id=%s",
                 (Jsonb(stats), run_id),
             )
             conn.commit()
     except Exception:
         with get_conn() as conn:
             conn.execute(
-                "UPDATE pipeline_runs SET status='failed', finished_at=now(), error=%s WHERE id=%s",
+                "UPDATE raw.pipeline_runs SET status='failed', finished_at=now(), error=%s"
+                " WHERE id=%s",
                 (traceback.format_exc()[:2000], run_id),
             )
             conn.commit()

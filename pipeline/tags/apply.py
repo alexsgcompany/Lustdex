@@ -1,4 +1,4 @@
-"""Walk raw_videos.tags_raw → normalize → tag_aliases lookup → video_tags.
+"""Walk raw.raw_videos.tags_raw → normalize → cat.tag_aliases lookup → cat.video_tags.
 
 Run: python -m pipeline.tags.apply
 Idempotent: ON CONFLICT DO NOTHING, so re-runs safely add new links
@@ -19,11 +19,11 @@ def main() -> None:
         with get_conn() as conn:
             alias_map: dict[str, int] = {
                 row[0]: row[1]
-                for row in conn.execute("SELECT normalized, tag_id FROM tag_aliases").fetchall()
+                for row in conn.execute("SELECT normalized, tag_id FROM cat.tag_aliases").fetchall()
             }
 
             videos = conn.execute(
-                "SELECT id, tags_raw FROM raw_videos WHERE tags_raw IS NOT NULL"
+                "SELECT id, tags_raw FROM raw.raw_videos WHERE tags_raw IS NOT NULL"
             ).fetchall()
 
             pairs: list[tuple[int, int]] = []
@@ -44,7 +44,7 @@ def main() -> None:
             if pairs:
                 with conn.cursor() as cur:
                     cur.executemany(
-                        "INSERT INTO video_tags (video_id, tag_id) VALUES (%s, %s)"
+                        "INSERT INTO cat.video_tags (video_id, tag_id) VALUES (%s, %s)"
                         " ON CONFLICT DO NOTHING",
                         pairs,
                     )

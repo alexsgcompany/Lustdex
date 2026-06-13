@@ -11,11 +11,11 @@ from pathlib import Path
 # Streamlit adds admin/ to sys.path; we add the parent (project root) here.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pipeline.common.config  # noqa: F401  loads DATABASE_URL from .env
 import streamlit as st
-
-from tags import dictionary, overview, review, runs
 from page_screens import builder
+from tags import dictionary, overview, review, runs
+
+import pipeline.common.config  # noqa: F401  loads DATABASE_URL from .env
 
 _SECTIONS = {
     "Tags": {

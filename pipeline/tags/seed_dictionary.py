@@ -24,7 +24,7 @@ def main() -> None:
         rows = conn.execute(
             """
             SELECT normalized, freq, raw_examples
-            FROM unmapped_tags
+            FROM raw.unmapped_tags
             WHERE status = 'pending'
             ORDER BY freq DESC
             LIMIT %s

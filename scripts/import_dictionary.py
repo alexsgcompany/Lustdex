@@ -50,7 +50,7 @@ def main() -> None:
 
             tag_id = conn.execute(
                 """
-                INSERT INTO tags (slug, name, category)
+                INSERT INTO cat.tags (slug, name, category)
                 VALUES (%s, %s, %s)
                 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category
                 RETURNING id
@@ -60,7 +60,7 @@ def main() -> None:
 
             conn.execute(
                 """
-                INSERT INTO tag_aliases (normalized, tag_id, source, confidence)
+                INSERT INTO cat.tag_aliases (normalized, tag_id, source, confidence)
                 VALUES (%s, %s, 'manual', 1.0)
                 ON CONFLICT (normalized) DO NOTHING
                 """,
@@ -68,7 +68,8 @@ def main() -> None:
             )
 
             conn.execute(
-                "UPDATE unmapped_tags SET status = 'resolved', updated_at = now() WHERE normalized = %s",
+                "UPDATE raw.unmapped_tags SET status = 'resolved', updated_at = now()"
+                " WHERE normalized = %s",
                 (normalized,),
             )
 

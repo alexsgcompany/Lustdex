@@ -1,6 +1,7 @@
 import re
 
 import streamlit as st
+
 from pipeline.common.db import get_conn
 from tags import queries
 
@@ -72,7 +73,7 @@ def _render_detail(tag_id: int, slug: str, name: str, category: str | None, cats
                 else:
                     with get_conn() as conn:
                         conn.execute(
-                            "UPDATE tags SET slug=%s, name=%s, category=%s WHERE id=%s",
+                            "UPDATE cat.tags SET slug=%s, name=%s, category=%s WHERE id=%s",
                             (ns, new_name.strip() or ns.replace("-", " ").title(),
                              new_cat or None, tag_id),
                         )

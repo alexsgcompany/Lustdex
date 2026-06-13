@@ -1,8 +1,9 @@
 import streamlit as st
+
+from page_screens import queries
 from pipeline.common.db import get_conn
 from pipeline.pages.cooccurrence import THRESHOLD, additions_for
 from pipeline.pages.slug import load_tag_slugs, provisional_slug
-from page_screens import queries
 
 
 def render() -> None:
@@ -10,7 +11,7 @@ def render() -> None:
 
     with get_conn() as conn:
         all_tags = conn.execute(
-            "SELECT id, name, slug FROM tags ORDER BY name"
+            "SELECT id, name, slug FROM cat.tags ORDER BY name"
         ).fetchall()
 
     tag_name  = {t[0]: t[1] for t in all_tags}

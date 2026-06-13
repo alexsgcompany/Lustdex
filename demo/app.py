@@ -10,8 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pipeline.common.config  # noqa: F401 — loads DATABASE_URL from .env
 from flask import Flask, abort, render_template, request
+
+import pipeline.common.config  # noqa: F401 — loads DATABASE_URL from .env
 from pipeline.common.db import get_conn
 
 app = Flask(__name__)
@@ -25,8 +26,8 @@ def index():
         tag_rows = conn.execute(
             """
             SELECT t.id, t.name, t.slug, t.category, COUNT(vt.video_id) AS cnt
-            FROM tags t
-            LEFT JOIN video_tags vt ON vt.tag_id = t.id
+            FROM cat.tags t
+            LEFT JOIN cat.video_tags vt ON vt.tag_id = t.id
             WHERE t.status = 'active'
             GROUP BY t.id, t.name, t.slug, t.category
             ORDER BY t.category NULLS LAST, t.name
@@ -37,8 +38,8 @@ def index():
             """
             SELECT pc.slug_provisional, pc.slug_final, pc.lexical_count,
                    array_agg(t.name ORDER BY t.name) AS tag_names
-            FROM page_candidates pc
-            JOIN tags t ON t.id = ANY(pc.member_tag_ids)
+            FROM cat.page_candidates pc
+            JOIN cat.tags t ON t.id = ANY(pc.member_tag_ids)
             WHERE pc.status = 'approved'
             GROUP BY pc.id, pc.slug_provisional, pc.slug_final, pc.lexical_count
             ORDER BY pc.lexical_count DESC
@@ -69,8 +70,8 @@ def candidate_page(slug: str):
             SELECT pc.id, pc.slug_provisional, pc.slug_final, pc.lexical_count,
                    pc.member_tag_ids,
                    array_agg(t.name ORDER BY t.name) AS tag_names
-            FROM page_candidates pc
-            JOIN tags t ON t.id = ANY(pc.member_tag_ids)
+            FROM cat.page_candidates pc
+            JOIN cat.tags t ON t.id = ANY(pc.member_tag_ids)
             WHERE pc.slug_provisional = %s
             GROUP BY pc.id, pc.slug_provisional, pc.slug_final, pc.lexical_count, pc.member_tag_ids
             """,
@@ -85,7 +86,7 @@ def candidate_page(slug: str):
         total = conn.execute(
             """
             SELECT COUNT(*) FROM (
-                SELECT video_id FROM video_tags
+                SELECT video_id FROM cat.video_tags
                 WHERE tag_id = ANY(%s)
                 GROUP BY video_id
                 HAVING COUNT(DISTINCT tag_id) = %s
@@ -97,15 +98,16 @@ def candidate_page(slug: str):
         videos = conn.execute(
             """
             WITH matched AS (
-                SELECT video_id FROM video_tags
+                SELECT video_id FROM cat.video_tags
                 WHERE tag_id = ANY(%s)
                 GROUP BY video_id
                 HAVING COUNT(DISTINCT tag_id) = %s
             )
-            SELECT rv.title, rv.thumb_url, rv.target_url
-            FROM raw_videos rv
-            JOIN matched m ON m.video_id = rv.id
-            ORDER BY rv.id
+            SELECT v.title, rv.thumb_url, v.target_url
+            FROM cat.videos v
+            JOIN raw.raw_videos rv ON rv.id = v.id
+            JOIN matched m ON m.video_id = v.id
+            ORDER BY v.id
             LIMIT %s OFFSET %s
             """,
             (tag_ids, n, PER_PAGE, offset),
@@ -134,24 +136,25 @@ def tag_page(slug: str):
 
     with get_conn() as conn:
         tag = conn.execute(
-            "SELECT id, name, slug, category FROM tags WHERE slug = %s AND status = 'active'",
+            "SELECT id, name, slug, category FROM cat.tags WHERE slug = %s AND status = 'active'",
             (slug,),
         ).fetchone()
         if not tag:
             abort(404)
 
         total = conn.execute(
-            "SELECT COUNT(*) FROM video_tags WHERE tag_id = %s",
+            "SELECT COUNT(*) FROM cat.video_tags WHERE tag_id = %s",
             (tag[0],),
         ).fetchone()[0]
 
         videos = conn.execute(
             """
-            SELECT rv.title, rv.thumb_url, rv.target_url
-            FROM raw_videos rv
-            JOIN video_tags vt ON vt.video_id = rv.id
+            SELECT v.title, rv.thumb_url, v.target_url
+            FROM cat.videos v
+            JOIN raw.raw_videos rv ON rv.id = v.id
+            JOIN cat.video_tags vt ON vt.video_id = v.id
             WHERE vt.tag_id = %s
-            ORDER BY rv.id
+            ORDER BY v.id
             LIMIT %s OFFSET %s
             """,
             (tag[0], PER_PAGE, offset),

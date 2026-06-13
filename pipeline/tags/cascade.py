@@ -1,4 +1,4 @@
-"""Cascade tag resolution: L1 (exact) then L2 (fuzzy) over unmapped_tags.
+"""Cascade tag resolution: L1 (exact) then L2 (fuzzy) over raw.unmapped_tags.
 
 Run:  python -m pipeline.tags.cascade
 """
@@ -37,18 +37,18 @@ def _run(conn, stats: dict) -> None:
     # normalized_key → tag_id
     candidates: dict[str, int] = {}
 
-    for tag_id, name in conn.execute("SELECT id, name FROM tags"):
+    for tag_id, name in conn.execute("SELECT id, name FROM cat.tags"):
         k = normalize(name)
         if k != TRASH:
             candidates[k] = tag_id
 
-    for normalized, tag_id in conn.execute("SELECT normalized, tag_id FROM tag_aliases"):
+    for normalized, tag_id in conn.execute("SELECT normalized, tag_id FROM cat.tag_aliases"):
         candidates[normalized] = tag_id
 
     candidate_keys = list(candidates.keys())
 
     pending = conn.execute(
-        "SELECT normalized FROM unmapped_tags WHERE status = 'pending' ORDER BY freq DESC"
+        "SELECT normalized FROM raw.unmapped_tags WHERE status = 'pending' ORDER BY freq DESC"
     ).fetchall()
 
     auto_rule = auto_fuzzy = suggested = untouched = 0
@@ -104,7 +104,7 @@ def _run(conn, stats: dict) -> None:
 def _write_alias(conn, normalized: str, tag_id: int, source: str, confidence: float) -> None:
     conn.execute(
         """
-        INSERT INTO tag_aliases (normalized, tag_id, source, confidence)
+        INSERT INTO cat.tag_aliases (normalized, tag_id, source, confidence)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (normalized) DO NOTHING
         """,
@@ -114,7 +114,8 @@ def _write_alias(conn, normalized: str, tag_id: int, source: str, confidence: fl
 
 def _mark_resolved(conn, normalized: str) -> None:
     conn.execute(
-        "UPDATE unmapped_tags SET status = 'resolved', updated_at = now() WHERE normalized = %s",
+        "UPDATE raw.unmapped_tags SET status = 'resolved', updated_at = now()"
+        " WHERE normalized = %s",
         (normalized,),
     )
 
@@ -122,7 +123,7 @@ def _mark_resolved(conn, normalized: str) -> None:
 def _write_suggestion(conn, normalized: str, tag_id: int, source: str, confidence: float) -> None:
     conn.execute(
         """
-        UPDATE unmapped_tags
+        UPDATE raw.unmapped_tags
         SET suggested_tag_id = %s, suggested_source = %s, suggested_confidence = %s,
             updated_at = now()
         WHERE normalized = %s

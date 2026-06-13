@@ -4,7 +4,7 @@
 def load_tag_slugs(conn, tag_ids: list[int]) -> dict[int, str]:
     """Return {tag_id: slug} for the given tag_ids."""
     rows = conn.execute(
-        "SELECT id, slug FROM tags WHERE id = ANY(%s)",
+        "SELECT id, slug FROM cat.tags WHERE id = ANY(%s)",
         (tag_ids,),
     ).fetchall()
     return {r[0]: r[1] for r in rows}

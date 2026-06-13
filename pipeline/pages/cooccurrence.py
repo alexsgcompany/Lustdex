@@ -12,15 +12,15 @@ def additions_for(conn, base_tag_ids: list[int]) -> list[tuple[int, str, str | N
         """
         WITH base_videos AS (
             SELECT video_id
-            FROM video_tags
+            FROM cat.video_tags
             WHERE tag_id = ANY(%s)
             GROUP BY video_id
             HAVING COUNT(DISTINCT tag_id) = %s
         )
         SELECT t.id, t.name, t.category, COUNT(*) AS cnt
-        FROM video_tags vt
+        FROM cat.video_tags vt
         JOIN base_videos bv ON bv.video_id = vt.video_id
-        JOIN tags t ON t.id = vt.tag_id
+        JOIN cat.tags t ON t.id = vt.tag_id
         WHERE vt.tag_id != ALL(%s)
         GROUP BY t.id, t.name, t.category
         HAVING COUNT(*) >= %s
