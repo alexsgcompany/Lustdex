@@ -22,7 +22,7 @@ PER_PAGE = 120  # 6 columns × 20 rows
 @app.route("/")
 def index():
     with get_conn() as conn:
-        rows = conn.execute(
+        tag_rows = conn.execute(
             """
             SELECT t.id, t.name, t.slug, t.category, COUNT(vt.video_id) AS cnt
             FROM tags t
@@ -33,12 +33,29 @@ def index():
             """,
         ).fetchall()
 
+        candidate_rows = conn.execute(
+            """
+            SELECT pc.slug_provisional, pc.slug_final, pc.lexical_count,
+                   array_agg(t.name ORDER BY t.name) AS tag_names
+            FROM page_candidates pc
+            JOIN tags t ON t.id = ANY(pc.member_tag_ids)
+            WHERE pc.status = 'approved'
+            GROUP BY pc.id, pc.slug_provisional, pc.slug_final, pc.lexical_count
+            ORDER BY pc.lexical_count DESC
+            """,
+        ).fetchall()
+
     groups: dict[str, list] = {}
-    for row in rows:
+    for row in tag_rows:
         cat = row[3] or "Other"
         groups.setdefault(cat, []).append({"name": row[1], "slug": row[2], "cnt": row[4]})
 
-    return render_template("index.html", groups=groups)
+    candidates = [
+        {"slug": r[1] or r[0], "slug_prov": r[0], "cnt": r[2], "tags": r[3]}
+        for r in candidate_rows
+    ]
+
+    return render_template("index.html", groups=groups, candidates=candidates)
 
 
 @app.route("/<slug>")

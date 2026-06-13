@@ -3,6 +3,45 @@
 
 {% block head %}
 <style>
+  /* ── page candidates ────────────────────────────────────── */
+  .candidates-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 32px;
+  }
+  .cand-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+    padding: 10px 12px;
+  }
+  .cand-slug {
+    font-family: monospace;
+    font-size: .82rem;
+    color: #f90;
+    word-break: break-all;
+    margin-bottom: 6px;
+  }
+  .cand-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .cand-tag {
+    background: #252525;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: .72rem;
+    color: #999;
+  }
+  .cand-cnt {
+    font-size: .75rem;
+    color: #555;
+  }
+
+  /* ── category tags ──────────────────────────────────────── */
   .tag-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -24,6 +63,24 @@
 {% endblock %}
 
 {% block content %}
+
+{% if candidates %}
+<h1>Page Candidates <span style="font-weight:400;font-size:.9rem;color:#666">({{ candidates|length }})</span></h1>
+<div class="candidates-grid">
+  {% for c in candidates %}
+  <div class="cand-card">
+    <div class="cand-slug">{{ c.slug }}</div>
+    <div class="cand-tags">
+      {% for name in c.tags %}
+      <span class="cand-tag">{{ name }}</span>
+      {% endfor %}
+    </div>
+    <div class="cand-cnt">{{ c.cnt }} videos</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <h1>Categories</h1>
 {% for category, tags in groups.items() %}
   <h2>{{ category }}</h2>
