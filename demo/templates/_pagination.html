@@ -1,0 +1,39 @@
+{% set win_start = [1, page - 3] | max %}
+{% set win_end   = [pages, page + 3] | min %}
+
+<nav class="pagination">
+  {# Prev #}
+  {% if page > 1 %}
+    <a href="/{{ tag.slug }}?page={{ page - 1 }}">&laquo; Prev</a>
+  {% else %}
+    <span class="disabled">&laquo; Prev</span>
+  {% endif %}
+
+  {# First page + gap #}
+  {% if win_start > 1 %}
+    <a href="/{{ tag.slug }}?page=1">1</a>
+    {% if win_start > 2 %}<span class="dots">…</span>{% endif %}
+  {% endif %}
+
+  {# Window #}
+  {% for p in range(win_start, win_end + 1) %}
+    {% if p == page %}
+      <span class="current">{{ p }}</span>
+    {% else %}
+      <a href="/{{ tag.slug }}?page={{ p }}">{{ p }}</a>
+    {% endif %}
+  {% endfor %}
+
+  {# Last page + gap #}
+  {% if win_end < pages %}
+    {% if win_end < pages - 1 %}<span class="dots">…</span>{% endif %}
+    <a href="/{{ tag.slug }}?page={{ pages }}">{{ pages }}</a>
+  {% endif %}
+
+  {# Next #}
+  {% if page < pages %}
+    <a href="/{{ tag.slug }}?page={{ page + 1 }}">Next &raquo;</a>
+  {% else %}
+    <span class="disabled">Next &raquo;</span>
+  {% endif %}
+</nav>

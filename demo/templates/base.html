@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Lustdex Demo{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #ddd;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 12px 24px;
+    }
+    header a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: .03em;
+    }
+    header a:hover { color: #f90; }
+
+    main { padding: 28px 24px; max-width: 1600px; margin: 0 auto; }
+
+    h1 { font-size: 1.4rem; margin-bottom: 20px; color: #fff; }
+    h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: .08em;
+         color: #888; margin: 28px 0 12px; }
+
+    a { color: #f90; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <a href="/">Lustdex Demo</a>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

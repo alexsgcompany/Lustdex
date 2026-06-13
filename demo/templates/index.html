@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Categories — Lustdex Demo{% endblock %}
+
+{% block head %}
+<style>
+  .tag-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px 16px;
+    margin-bottom: 8px;
+  }
+  .tag-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid #1e1e1e;
+    font-size: .9rem;
+  }
+  .tag-item a { color: #ccc; }
+  .tag-item a:hover { color: #f90; text-decoration: none; }
+  .tag-cnt { color: #555; font-size: .78rem; margin-left: 6px; flex-shrink: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Categories</h1>
+{% for category, tags in groups.items() %}
+  <h2>{{ category }}</h2>
+  <div class="tag-grid">
+    {% for t in tags %}
+    <div class="tag-item">
+      <a href="/{{ t.slug }}">{{ t.name }}</a>
+      <span class="tag-cnt">{{ t.cnt }}</span>
+    </div>
+    {% endfor %}
+  </div>
+{% endfor %}
+{% endblock %}
