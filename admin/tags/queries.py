@@ -1,15 +1,19 @@
 """All SQL for the Tags admin section. No pipeline logic here."""
 
 # Coverage by occurrences.
-# unmapped_tags.freq = occurrence count per normalized key (all statuses, including trash).
-# Resolved = keys that have an entry in tag_aliases.
-# This matches the Python-computed coverage from pipeline.tags.apply.
+# collect.py only updates freq in unmapped_tags for pending/trash rows; resolved rows keep
+# stale freq from the run that first inserted them. To avoid that skew, we derive total_occ
+# from the raw source (sum of array_length over raw_videos.tags_raw) and compute resolved as
+# total minus the pending and trash freq — both of which are always current after every collect.
 COVERAGE = """
 SELECT
-    COALESCE(SUM(ut.freq), 0)                                                       AS total_occ,
-    COALESCE(SUM(CASE WHEN ta.tag_id IS NOT NULL THEN ut.freq ELSE 0 END), 0)       AS resolved_occ
-FROM unmapped_tags ut
-LEFT JOIN tag_aliases ta ON ta.normalized = ut.normalized
+    raw.total_occ                                   AS total_occ,
+    raw.total_occ - pt.pending_trash_freq           AS resolved_occ
+FROM
+    (SELECT SUM(array_length(tags_raw, 1)) AS total_occ
+     FROM raw_videos WHERE tags_raw IS NOT NULL)    raw,
+    (SELECT COALESCE(SUM(freq), 0)         AS pending_trash_freq
+     FROM unmapped_tags WHERE status IN ('pending', 'trash')) pt
 """
 
 COUNTERS = """
