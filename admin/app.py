@@ -15,16 +15,25 @@ import pipeline.common.config  # noqa: F401  loads DATABASE_URL from .env
 import streamlit as st
 
 from tags import dictionary, overview, review, runs
+from page_screens import builder
 
-_PAGES = {
-    "Overview":   overview.render,
-    "Review":     review.render,
-    "Dictionary": dictionary.render,
-    "Runs":       runs.render,
+_SECTIONS = {
+    "Tags": {
+        "Overview":   overview.render,
+        "Review":     review.render,
+        "Dictionary": dictionary.render,
+        "Runs":       runs.render,
+    },
+    "Pages": {
+        "Builder": builder.render,
+    },
 }
 
 st.set_page_config(page_title="Lustdex Admin", layout="wide")
 st.sidebar.title("Lustdex Admin")
-st.sidebar.subheader("Tags")
-page = st.sidebar.radio("Section", list(_PAGES.keys()), label_visibility="collapsed")
-_PAGES[page]()
+
+section = st.sidebar.radio("Section", list(_SECTIONS.keys()), key="section")
+pages = _SECTIONS[section]
+st.sidebar.subheader(section)
+page = st.sidebar.radio("Page", list(pages.keys()), label_visibility="collapsed", key="page")
+pages[page]()
