@@ -20,6 +20,7 @@ from pipeline.tags.normalize import TRASH, normalize
     ("RedHead",      "redhead"),
     ("Wives",        "wife"),          # irregular plural via exception dict
     ("Feet",         "foot"),          # irregular plural via exception dict
+    ("Glasses",      "glasses"),       # sses-rule would give 'glass'; exception protects it
     ("Pussies",      "pussy"),         # ies-rule
     # acronyms: survive singularization (don't end in s)
     ("BDSM",  "bdsm"),

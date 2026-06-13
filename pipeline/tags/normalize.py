@@ -52,12 +52,12 @@ def normalize(raw: str) -> str:
         return TRASH
 
     # Step 6: exception dictionary (full-string match)
-    applied_exception = s in EXCEPTIONS
-    if applied_exception:
-        s = EXCEPTIONS[s]
+    # Value is the final form — return immediately, do not singularize.
+    if s in EXCEPTIONS:
+        return EXCEPTIONS[s]
 
-    # [a-z] guard: pure-numeric strings that are NOT protected by the exception dict
-    if not applied_exception and not re.search(r"[a-z]", s):
+    # [a-z] guard: pure-numeric strings not in the exception dict
+    if not re.search(r"[a-z]", s):
         return TRASH
 
     # Step 7: singularize last token (rule-based, matching key only)

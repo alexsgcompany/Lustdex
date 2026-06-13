@@ -25,4 +25,6 @@ EXCEPTIONS: dict[str, str] = {
     # irregular plurals confirmed in feed data
     "feet":  "foot",
     "wives": "wife",
+    # nouns where singularize would mangle (glasses → glass via sses-rule)
+    "glasses": "glasses",
 }
