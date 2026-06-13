@@ -58,6 +58,75 @@ def index():
     return render_template("index.html", groups=groups, candidates=candidates)
 
 
+@app.route("/p/<slug>")
+def candidate_page(slug: str):
+    page = max(1, request.args.get("page", 1, type=int))
+    offset = (page - 1) * PER_PAGE
+
+    with get_conn() as conn:
+        candidate = conn.execute(
+            """
+            SELECT pc.id, pc.slug_provisional, pc.slug_final, pc.lexical_count,
+                   pc.member_tag_ids,
+                   array_agg(t.name ORDER BY t.name) AS tag_names
+            FROM page_candidates pc
+            JOIN tags t ON t.id = ANY(pc.member_tag_ids)
+            WHERE pc.slug_provisional = %s
+            GROUP BY pc.id, pc.slug_provisional, pc.slug_final, pc.lexical_count, pc.member_tag_ids
+            """,
+            (slug,),
+        ).fetchone()
+        if not candidate:
+            abort(404)
+
+        tag_ids = candidate[4]
+        n = len(tag_ids)
+
+        total = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT video_id FROM video_tags
+                WHERE tag_id = ANY(%s)
+                GROUP BY video_id
+                HAVING COUNT(DISTINCT tag_id) = %s
+            ) sub
+            """,
+            (tag_ids, n),
+        ).fetchone()[0]
+
+        videos = conn.execute(
+            """
+            WITH matched AS (
+                SELECT video_id FROM video_tags
+                WHERE tag_id = ANY(%s)
+                GROUP BY video_id
+                HAVING COUNT(DISTINCT tag_id) = %s
+            )
+            SELECT rv.title, rv.thumb_url, rv.target_url
+            FROM raw_videos rv
+            JOIN matched m ON m.video_id = rv.id
+            ORDER BY rv.id
+            LIMIT %s OFFSET %s
+            """,
+            (tag_ids, n, PER_PAGE, offset),
+        ).fetchall()
+
+    pages = ceil(total / PER_PAGE) if total else 1
+    return render_template(
+        "candidate.html",
+        candidate={
+            "slug": candidate[2] or candidate[1],
+            "slug_prov": candidate[1],
+            "cnt": candidate[3],
+            "tags": candidate[5],
+        },
+        videos=[{"title": v[0], "thumb": v[1], "url": v[2]} for v in videos],
+        page=page,
+        pages=pages,
+        total=total,
+    )
+
+
 @app.route("/<slug>")
 def tag_page(slug: str):
     page = max(1, request.args.get("page", 1, type=int))

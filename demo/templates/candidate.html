@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ candidate.slug }} — Lustdex Demo{% endblock %}
+
+{% block head %}
+<style>
+  .breadcrumb { font-size: .85rem; color: #666; margin-bottom: 18px; }
+  .breadcrumb a { color: #888; }
+
+  .slug-title { font-family: monospace; font-size: 1.3rem; color: #f90; margin-bottom: 10px; }
+
+  .tag-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .tag-badge {
+    background: #252525; border: 1px solid #333; border-radius: 4px;
+    padding: 3px 9px; font-size: .8rem; color: #aaa;
+  }
+
+  .meta { font-size: .85rem; color: #666; margin: 10px 0 20px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+  }
+  .card {
+    display: block; background: #1a1a1a; border-radius: 4px;
+    overflow: hidden; color: inherit; text-decoration: none; transition: opacity .15s;
+  }
+  .card:hover { opacity: .85; }
+
+  .thumb-wrap {
+    position: relative; width: 100%; padding-top: 56.25%;
+    background: #222; overflow: hidden;
+  }
+  .thumb-wrap img {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  }
+  .no-thumb {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center; color: #444; font-size: .75rem;
+  }
+  .card-title {
+    padding: 6px 8px; font-size: .78rem; color: #bbb;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .pagination {
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 20px 0;
+  }
+  .pagination a, .pagination span {
+    display: inline-block; padding: 5px 11px; border-radius: 3px;
+    font-size: .85rem; background: #1e1e1e; color: #ccc; text-decoration: none;
+  }
+  .pagination a:hover { background: #2a2a2a; color: #fff; }
+  .pagination .current { background: #f90; color: #111; font-weight: 600; }
+  .pagination .disabled { color: #444; cursor: default; }
+  .pagination .dots { background: none; color: #555; padding: 5px 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb"><a href="/">Home</a> › Page Candidates</div>
+
+<div class="slug-title">{{ candidate.slug }}</div>
+<div class="tag-badges">
+  {% for name in candidate.tags %}
+  <span class="tag-badge">{{ name }}</span>
+  {% endfor %}
+</div>
+<div class="meta">{{ total }} videos{% if pages > 1 %} · page {{ page }} of {{ pages }}{% endif %}</div>
+
+{% if pages > 1 %}
+  {% set tag = {"slug": "p/" ~ candidate.slug_prov} %}
+  {% include "_pagination.html" %}
+{% endif %}
+
+<div class="grid">
+  {% for v in videos %}
+  <a class="card" href="{{ v.url }}" target="_blank" rel="noopener">
+    <div class="thumb-wrap">
+      {% if v.thumb %}
+        <img src="{{ v.thumb }}" alt="" loading="lazy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="no-thumb" style="display:none">no image</div>
+      {% else %}
+        <div class="no-thumb">no image</div>
+      {% endif %}
+    </div>
+    <div class="card-title" title="{{ v.title or '' }}">{{ v.title or '—' }}</div>
+  </a>
+  {% endfor %}
+</div>
+
+{% if pages > 1 %}
+  <div style="margin-top:24px">
+    {% set tag = {"slug": "p/" ~ candidate.slug_prov} %}
+    {% include "_pagination.html" %}
+  </div>
+{% endif %}
+{% endblock %}
