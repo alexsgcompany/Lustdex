@@ -119,7 +119,8 @@ def _render_actions(normalized, freq, cats, sug_id, sug_source, sug_conf, sug_na
     with right:
         st.caption("Create new canonical")
         with st.form(key=f"new_{normalized}"):
-            slug_input = st.text_input("slug *", placeholder="e.g. my-tag", key=f"slug_{normalized}")
+            slug_input = st.text_input("slug *", value=normalized.replace(" ", "-"),
+                                       key=f"slug_{normalized}")
             name_input = st.text_input("name", value=normalized.replace("-", " ").title(),
                                        key=f"name_{normalized}")
             cat_input  = st.selectbox("category", [""] + cats, key=f"cat_{normalized}")
