@@ -4,6 +4,7 @@ Run from project root:
     python demo/app.py
 """
 
+import os
 import sys
 from math import ceil
 from pathlib import Path
@@ -18,6 +19,13 @@ from pipeline.common.db import get_conn
 app = Flask(__name__)
 
 PER_PAGE = 120  # 6 columns × 20 rows
+CDN_BASE = os.environ.get("BUNNY_PULL_ZONE_URL", "").rstrip("/")
+
+
+def _thumb_url(cdn_path: str | None, raw_url: str | None) -> str | None:
+    if cdn_path and CDN_BASE:
+        return f"{CDN_BASE}/{cdn_path}"
+    return raw_url
 
 
 @app.route("/")
@@ -103,10 +111,12 @@ def candidate_page(slug: str):
                 GROUP BY video_id
                 HAVING COUNT(DISTINCT tag_id) = %s
             )
-            SELECT v.title, rv.thumb_url, v.target_url
+            SELECT v.title, va.path, rv.thumb_url, v.target_url
             FROM cat.videos v
             JOIN raw.raw_videos rv ON rv.id = v.id
             JOIN matched m ON m.video_id = v.id
+            LEFT JOIN cat.video_assets va
+                   ON va.video_id = v.id AND va.kind = 'thumb'
             ORDER BY v.id
             LIMIT %s OFFSET %s
             """,
@@ -122,7 +132,7 @@ def candidate_page(slug: str):
             "cnt": candidate[3],
             "tags": candidate[5],
         },
-        videos=[{"title": v[0], "thumb": v[1], "url": v[2]} for v in videos],
+        videos=[{"title": v[0], "thumb": _thumb_url(v[1], v[2]), "url": v[3]} for v in videos],
         page=page,
         pages=pages,
         total=total,
@@ -149,10 +159,12 @@ def tag_page(slug: str):
 
         videos = conn.execute(
             """
-            SELECT v.title, rv.thumb_url, v.target_url
+            SELECT v.title, va.path, rv.thumb_url, v.target_url
             FROM cat.videos v
             JOIN raw.raw_videos rv ON rv.id = v.id
             JOIN cat.video_tags vt ON vt.video_id = v.id
+            LEFT JOIN cat.video_assets va
+                   ON va.video_id = v.id AND va.kind = 'thumb'
             WHERE vt.tag_id = %s
             ORDER BY v.id
             LIMIT %s OFFSET %s
@@ -164,7 +176,7 @@ def tag_page(slug: str):
     return render_template(
         "tag.html",
         tag={"id": tag[0], "name": tag[1], "slug": tag[2], "category": tag[3]},
-        videos=[{"title": v[0], "thumb": v[1], "url": v[2]} for v in videos],
+        videos=[{"title": v[0], "thumb": _thumb_url(v[1], v[2]), "url": v[3]} for v in videos],
         page=page,
         pages=pages,
         total=total,
