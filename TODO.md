@@ -63,6 +63,11 @@ Stack lock-in:
 - [ ] **Related videos block** on detail page (uses embeddings).
 - [ ] **Raised `MIN_VIDEOS_PER_PAGE` threshold** (spec 06 §5; MVP uses 1).
 - [ ] **Admin: projections editor** (currently SQL-only; spec 06 P9).
+- [ ] **Admin: page_candidates CRUD as long-tail override.** Auto-generator
+      (Page Builder) + `brand_tag_id` filter (migration 010) covers the bulk
+      cleanly. Manual editor (title, slug, tag-tuple, projection scope) is
+      needed for long-tail intent splits Google distinguishes but the auto
+      can't — e.g. `ladyboy` / `tgirl` / `ts-girl` vs the canonical `shemale`.
 - [ ] **Admin: Pipeline tab** with trigger buttons (each step = its own button,
       not chained).
         - Buttons: Ingest [provider ▾] [limit N] / Promote raw→cat / Tags

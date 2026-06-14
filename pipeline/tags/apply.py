@@ -41,12 +41,29 @@ def main() -> None:
                         continue
                     pairs.append((video_id, tag_id))
 
+            brand_pairs: list[tuple[int, int]] = conn.execute(
+                """
+                SELECT v.id, p.brand_tag_id
+                FROM cat.videos v
+                JOIN cat.projections p
+                  ON v.vertical = ANY(p.from_verticals)
+                WHERE p.brand_tag_id IS NOT NULL
+                """
+            ).fetchall()
+
             if pairs:
                 with conn.cursor() as cur:
                     cur.executemany(
                         "INSERT INTO cat.video_tags (video_id, tag_id) VALUES (%s, %s)"
                         " ON CONFLICT DO NOTHING",
                         pairs,
+                    )
+            if brand_pairs:
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        "INSERT INTO cat.video_tags (video_id, tag_id) VALUES (%s, %s)"
+                        " ON CONFLICT DO NOTHING",
+                        brand_pairs,
                     )
             conn.commit()
 
@@ -55,10 +72,11 @@ def main() -> None:
             tags_trash=tags_trash,
             tags_missing=tags_missing,
             pairs_written=len(pairs),
+            brand_pairs_written=len(brand_pairs),
         )
         log.info(
-            "videos=%d  trash=%d  missing=%d  pairs=%d",
-            len(videos), tags_trash, tags_missing, len(pairs),
+            "videos=%d  trash=%d  missing=%d  pairs=%d  brand_pairs=%d",
+            len(videos), tags_trash, tags_missing, len(pairs), len(brand_pairs),
         )
 
 

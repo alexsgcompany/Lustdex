@@ -90,7 +90,7 @@ Recommended TTLs:
 
 | Table | Why the site reads it | Fields the site may use |
 |-------|----------------------|-------------------------|
-| `cat.projections` | Load own config at startup. | `slug, from_verticals, include_tag_ids, exclude_tag_ids, active` |
+| `cat.projections` | Load own config at startup. | `slug, from_verticals, include_tag_ids, exclude_tag_ids, brand_tag_id, active` |
 | `cat.videos` | Listing rows. | `id, slug, go_token, title, duration_sec, has_thumb, published_at, vertical` |
 | `cat.video_tags` | JOIN/filter by tag. | `video_id, tag_id` |
 | `cat.tags` | Tag pages, navigation. Filter `status = 'active'`. | `id, slug, name, category` |
@@ -197,14 +197,21 @@ If `t` is empty → 404. Total count for pagination: same query without
 
 Two-phase per spec 06 §5: resolve, then projection-count, then render.
 
+**Brand-tag filter (mandatory when `projection.brand_tag_id IS NOT NULL`):** the
+candidate's `member_tag_ids` MUST contain `brand_tag_id`. This is what keeps
+`(asian, milf)` from serving on the trans projection — a shemale-site SEO page
+without `shemale` in the tuple has the wrong search intent. Projections with
+`brand_tag_id IS NULL` (e.g. mix) skip this filter.
+
 ```sql
--- 1. Resolve the page candidate
+-- 1. Resolve the page candidate (brand-tag filter inlined when applicable)
 SELECT id, member_tag_ids,
        COALESCE(slug_final, slug_provisional) AS slug,
        lexical_count, volume
 FROM cat.page_candidates
 WHERE COALESCE(slug_final, slug_provisional) = $1
-  AND status = 'approved';
+  AND status = 'approved'
+  AND ($brand_tag_id::int IS NULL OR $brand_tag_id = ANY(member_tag_ids));
 ```
 
 ```sql
