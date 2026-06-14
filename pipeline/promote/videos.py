@@ -39,17 +39,19 @@ def _slug(title: str | None) -> str:
 _UPSERT_SQL = """
 INSERT INTO cat.videos (
     id, provider_id, external_id, title, slug, go_token,
-    duration_sec, target_url, published_at
+    duration_sec, target_url, published_at, vertical
 ) VALUES (
     %(id)s, %(provider_id)s, %(external_id)s, %(title)s, %(slug)s, %(go_token)s,
-    %(duration_sec)s, %(target_url)s, %(published_at)s
+    %(duration_sec)s, %(target_url)s, %(published_at)s, %(vertical)s
 )
 ON CONFLICT (id) DO UPDATE SET
     title        = EXCLUDED.title,
     duration_sec = EXCLUDED.duration_sec,
     target_url   = EXCLUDED.target_url,
-    published_at = EXCLUDED.published_at
-    -- slug and go_token are NOT updated: pinned at first promote
+    published_at = EXCLUDED.published_at,
+    vertical     = EXCLUDED.vertical
+    -- slug and go_token are NOT updated: pinned at first promote.
+    -- vertical IS refreshed: reflects current feed config (see specs/06-projections.md P4).
 """
 
 
@@ -58,8 +60,9 @@ def run() -> int:
         rows = conn.execute(
             """
             SELECT rv.id, rv.provider_id, rv.external_id, rv.title,
-                   rv.duration_sec, rv.target_url, rv.published_at
+                   rv.duration_sec, rv.target_url, rv.published_at, f.niche
             FROM raw.raw_videos rv
+            JOIN raw.feeds f ON f.id = rv.feed_id
             LEFT JOIN cat.videos v ON v.id = rv.id
             WHERE v.id IS NULL
             ORDER BY rv.id
@@ -80,6 +83,7 @@ def run() -> int:
                 "duration_sec": r[4],
                 "target_url": r[5] or "",
                 "published_at": r[6],
+                "vertical": r[7],
             }
             for r in rows
         ]
