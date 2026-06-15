@@ -13,18 +13,46 @@ def render() -> None:
         all_tags = conn.execute(
             "SELECT id, name, slug FROM cat.tags ORDER BY name"
         ).fetchall()
+        projections = conn.execute(
+            "SELECT id, slug, name, brand_tag_id FROM cat.projections"
+            " WHERE active ORDER BY slug"
+        ).fetchall()
 
     tag_name  = {t[0]: t[1] for t in all_tags}
     tag_label = {t[0]: f"{t[1]}  ({t[2]})" for t in all_tags}
 
-    base_ids: list[int] = st.multiselect(
-        "Base tags",
-        options=[t[0] for t in all_tags],
+    # ── projection selector ───────────────────────────────────────────────────
+    proj_by_id = {p[0]: p for p in projections}
+    proj_choice = st.selectbox(
+        "Projection",
+        options=[None, *proj_by_id.keys()],
+        format_func=lambda x: "— all (no projection) —" if x is None
+                              else f"{proj_by_id[x][1]} ({proj_by_id[x][2]})",
+    )
+
+    pinned_id: int | None = proj_by_id[proj_choice][3] if proj_choice else None
+    if proj_choice is not None and pinned_id is None:
+        st.caption(
+            f"Projection **{proj_by_id[proj_choice][1]}** has no brand tag — "
+            f"candidates will be unfiltered (served on this projection if no "
+            f"brand_tag is set; see spec 07 §5.3)."
+        )
+
+    # ── base tag selection (pinned brand_tag + user-picked extras) ────────────
+    if pinned_id is not None:
+        st.caption(f"Brand tag pinned from projection: **{tag_name[pinned_id]}**")
+
+    extras: list[int] = st.multiselect(
+        "Additional base tags" if pinned_id is not None else "Base tags",
+        options=[t[0] for t in all_tags if t[0] != pinned_id],
         format_func=lambda x: tag_label[x],
     )
 
+    base_ids: list[int] = ([pinned_id] if pinned_id is not None else []) + extras
+
     if not base_ids:
-        st.info("Select one or more base tags to see addition candidates.")
+        st.info("Select a projection with a brand tag, or pick base tag(s), "
+                "to see addition candidates.")
         return
 
     # ── fetch all data in one connection block ────────────────────────────────
@@ -84,7 +112,19 @@ def render() -> None:
 
         if is_done:
             row[3].markdown(f"`{default_slug}`")
-            row[4].markdown("✅")
+            if row[4].button(
+                "🗑️",
+                key=f"del_{base_key}_{tag_id}",
+                help="Remove this combination",
+            ):
+                with get_conn() as conn:
+                    conn.execute(queries.DELETE_CANDIDATE, (member_ids,))
+                    conn.commit()
+                st.success(
+                    "Removed: "
+                    + ", ".join(tag_name[i] for i in member_ids)
+                )
+                st.rerun()
         else:
             edited_slug = row[3].text_input(
                 "", value=default_slug,

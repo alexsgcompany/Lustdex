@@ -13,6 +13,11 @@ ON CONFLICT (member_tag_ids) DO NOTHING
 RETURNING id
 """
 
+DELETE_CANDIDATE = """
+DELETE FROM cat.page_candidates
+WHERE member_tag_ids = %s::int[]
+"""
+
 CANDIDATE_LIST = """
 SELECT id, member_tag_ids, lexical_count, slug_provisional, slug_final, status, created_at
 FROM cat.page_candidates
