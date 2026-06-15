@@ -20,6 +20,8 @@ _FUZZY_REVIEW = 86.0   # score ≥ this → suggestion
 
 def _collision_guard(a: str, b: str) -> bool:
     """Return True if this pair should NOT be auto-mapped (teen/ten-class risk)."""
+    if not a or not b:
+        return True
     a_t, b_t = a.split(), b.split()
     a_short = len(a_t) == 1 and len(a_t[0]) <= 4
     b_short = len(b_t) == 1 and len(b_t[0]) <= 4
