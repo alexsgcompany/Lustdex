@@ -13,15 +13,15 @@ projections or swapping the model.
 
 | #  | Decision | Value |
 |----|----------|-------|
-| E1 | Model | `intfloat/multilingual-e5-small` (384 dim, multilingual, 512-token context) |
+| E1 | Model | `BAAI/bge-small-en-v1.5` (384 dim, English-only, 512-token context). Chosen so the query-side encoder can run on Cloudflare Workers AI (`@cf/baai/bge-small-en-v1.5`) instead of self-hosting. Initial implementation used `intfloat/multilingual-e5-small` but the catalog is English-only in practice, and Workers AI does not stock the e5 family. Same dim (384) → same schema, no migration. See spec 09 §V2 for the wiring decision. |
 | E2 | Storage type | `halfvec(384)` — 16-bit floats, half the disk vs `vector(384)`, near-zero recall loss for e5-class models |
 | E3 | Index | HNSW, `halfvec_cosine_ops`, `m=16`, `ef_construction=200`. Initial migration 011 used the pgvector default 64; A/B compared on 50k (sibling table, same vectors, different ef_construction) showed marginal recall change at that scale but the higher value was locked in before the full 581k embed to amortise the one-time build cost. Migration 012 re-indexes. |
 | E4 | Sample for MVP | `cat.videos.vertical = 'trans'`, newest first (`published_at DESC NULLS LAST, id DESC`), `LIMIT 50000` |
-| E5 | Input text composition | `"passage: {title}. tags: {tags}. performers: {performers}. {description}"`. `passage:` prefix is required by the E5 family for indexed content. Tags joined `", "` from `cat.tags.name` (canonical only). Performers joined `", "` from `raw.raw_videos.performers_raw` (raw text, no canonicalization yet). Empty parts collapse cleanly (no stray separators). |
+| E5 | Input text composition | `"{title}. tags: {tags}. performers: {performers}. {description}"`. **No model-specific prefix on the indexed side** — bge-small-en-v1.5 documents go in raw; the "Represent this sentence for searching relevant passages: " instruction is query-side only (spec 09 §V3). Tags joined `", "` from `cat.tags.name` (canonical only). Performers joined `", "` from `raw.raw_videos.performers_raw` (raw text, no canonicalization yet). Empty parts collapse cleanly (no stray separators). |
 | E6 | Truncation | model-side, `max_seq_length=512`, `truncation=True`. No pre-trim in Python. |
 | E7 | Idempotency | per-row `input_hash = sha256(input_text)` stored alongside the vector. Re-runs SELECT current hashes for candidate `video_id`s and skip rows whose hash is unchanged. No re-encoding on no-op. |
 | E8 | Device | auto: CUDA → MPS (Mac) → CPU. e5-small is small enough that CPU works (slow); MPS is fine for 50k. |
-| E9 | New deps | `sentence-transformers`, `torch` (approved). No `pgvector` Python adapter — embeddings are passed as text literals (`'[v1,v2,...]'`) and cast via column type; avoids an extra dep for one INSERT. |
+| E9 | New deps | `sentence-transformers`, `torch` (approved). No `pgvector` Python adapter — embeddings are passed as text literals (`'[v1,v2,...]'`) and cast via column type; avoids an extra dep for one INSERT. Model files (~133 MB for bge-small-en-v1.5) pulled from HuggingFace at first use. |
 | E10 | Schema location | `cat.video_embeddings`. PK = `video_id` (one embedding per video). FK to `cat.videos(id) ON DELETE CASCADE`. Stored in `cat.*` because the site (Hyperdrive → cat schema only) will read it for future related-videos. |
 | E11 | Performers handling | use `raw.raw_videos.performers_raw` as-is. Performer canonicalization is a separate Post-MVP item; when it lands, re-embed (input text changes, hash mismatches, scripts pick it up automatically). |
 | E12 | Description source | `raw.raw_videos.description`. Not promoted to `cat.videos` — embedding script reads cross-schema; this is fine because the embedding script is pipeline-side, not site-side. |
@@ -34,7 +34,7 @@ projections or swapping the model.
 ```sql
 CREATE TABLE cat.video_embeddings (
     video_id   bigint PRIMARY KEY REFERENCES cat.videos(id) ON DELETE CASCADE,
-    model      text NOT NULL,                 -- 'intfloat/multilingual-e5-small'
+    model      text NOT NULL,                 -- 'BAAI/bge-small-en-v1.5'
     embedding  halfvec(384) NOT NULL,
     input_hash bytea NOT NULL,                -- sha256 of input text
     created_at timestamptz NOT NULL DEFAULT now()

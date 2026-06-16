@@ -305,23 +305,12 @@ the site links to URLs that 404 on render (see spec 06 §5).
 
 ### 6.1 Vector search
 
-**Blocked on:** `cat.video_embeddings` table (`video_id`, `embedding vector(N)`)
-and `pipeline/embeddings/` to populate it. Tracked in TODO post-MVP.
-
-**Planned shape (do not implement until schema exists):**
-
-```sql
-SELECT v.id, v.slug, v.go_token, v.title,
-       (e.embedding <=> $query_embedding) AS distance
-FROM cat.video_embeddings e
-JOIN cat.videos v ON v.id = e.video_id
-WHERE <projectionWhere>
-ORDER BY e.embedding <=> $query_embedding
-LIMIT 24;
-```
-
-Open: embedding model + dim, index type (HNSW vs IVFFlat), where the query
-text is embedded (Worker via OpenRouter call vs VPS-side helper).
+**Ready.** Schema in spec 08 / migrations 011+012 (`cat.video_embeddings`,
+`halfvec(384)`, HNSW `m=16, ef_construction=200`). Endpoint contract in
+spec 09 (canonical SQL with CTE-based threshold + pagination, query encoder
+via Workers AI `@cf/intfloat/multilingual-e5-small`, PROJ_WHERE per §4).
+This stub stays for navigation — see `specs/09-vector-search.md` for the
+full contract.
 
 ### 6.2 Actor pages — `/actor/:slug` and `/actor/:slug/:seo`
 

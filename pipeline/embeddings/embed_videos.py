@@ -14,7 +14,7 @@ from pipeline.common.log import get_logger
 
 log = get_logger("embeddings.embed_videos")
 
-DEFAULT_MODEL = "intfloat/multilingual-e5-small"
+DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 DIM = 384
 SELECT_CANDIDATES_SQL = """
 SELECT
@@ -53,7 +53,12 @@ def build_passage(
     tags: list[str] | None,
     performers: list[str] | None,
 ) -> str:
-    """Compose the e5 'passage:' text per spec 08 §E5."""
+    """Compose the passage text per spec 08 §E5.
+
+    No model-specific prefix: bge-small-en-v1.5 does not require one on the
+    indexed side (the 'Represent this sentence...' instruction is query-side
+    only, applied in the Worker — see spec 09 §V3).
+    """
     parts: list[str] = []
     if title:
         parts.append(title.strip())
@@ -67,7 +72,7 @@ def build_passage(
             parts.append("performers: " + ", ".join(clean))
     if description:
         parts.append(description.strip())
-    return "passage: " + ". ".join(parts)
+    return ". ".join(parts)
 
 
 def pick_device(requested: str) -> str:

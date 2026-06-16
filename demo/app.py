@@ -63,11 +63,11 @@ _search_model = None
 
 
 def _get_search_model():
-    """Lazy-load the e5 model at first /search hit so app startup stays fast."""
+    """Lazy-load the bge model at first /search hit so app startup stays fast."""
     global _search_model
     if _search_model is None:
         from sentence_transformers import SentenceTransformer
-        _search_model = SentenceTransformer("intfloat/multilingual-e5-small")
+        _search_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
     return _search_model
 
 
@@ -202,9 +202,16 @@ def candidate_page(slug: str):
 SEARCH_EF_SEARCH = 200
 
 
+_BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+
+
 def _vector_search(q: str) -> list[dict]:
     model = _get_search_model()
-    vec = model.encode("query: " + q, normalize_embeddings=True, convert_to_numpy=True)
+    vec = model.encode(
+        _BGE_QUERY_INSTRUCTION + q,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )
     lit = _vec_literal(vec)
     with get_conn() as conn:
         # SET does not accept bind parameters in postgres; inline the int.
