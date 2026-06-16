@@ -59,6 +59,22 @@ def _thumb_url(cdn_path: str | None, raw_url: str | None) -> str | None:
     return raw_url
 
 
+_search_model = None
+
+
+def _get_search_model():
+    """Lazy-load the e5 model at first /search hit so app startup stays fast."""
+    global _search_model
+    if _search_model is None:
+        from sentence_transformers import SentenceTransformer
+        _search_model = SentenceTransformer("intfloat/multilingual-e5-small")
+    return _search_model
+
+
+def _vec_literal(vec) -> str:
+    return "[" + ",".join(f"{float(x):.6f}" for x in vec) + "]"
+
+
 @app.route("/")
 def index():
     brand_id = PROJECTION["brand_tag_id"]
@@ -182,6 +198,44 @@ def candidate_page(slug: str):
     )
 
 
+# pgvector caps returned rows at ef_search, so it must be >= PER_PAGE.
+SEARCH_EF_SEARCH = 200
+
+
+def _vector_search(q: str) -> list[dict]:
+    model = _get_search_model()
+    vec = model.encode("query: " + q, normalize_embeddings=True, convert_to_numpy=True)
+    lit = _vec_literal(vec)
+    with get_conn() as conn:
+        # SET does not accept bind parameters in postgres; inline the int.
+        conn.execute(f"SET LOCAL hnsw.ef_search = {int(SEARCH_EF_SEARCH)}")
+        rows = conn.execute(
+            f"""
+            SELECT v.title, va.path, rv.thumb_url, v.target_url
+            FROM cat.video_embeddings e
+            JOIN cat.videos v ON v.id = e.video_id
+            JOIN raw.raw_videos rv ON rv.id = v.id
+            LEFT JOIN cat.video_assets va
+                   ON va.video_id = v.id AND va.kind = 'thumb'
+            WHERE {PROJ_WHERE}
+            ORDER BY e.embedding <=> %s::halfvec
+            LIMIT %s
+            """,
+            (*PROJ_BINDS, lit, PER_PAGE),
+        ).fetchall()
+    return [
+        {"title": r[0], "thumb": _thumb_url(r[1], r[2]), "url": r[3]}
+        for r in rows
+    ]
+
+
+@app.route("/search")
+def search():
+    q = (request.args.get("q") or "").strip()
+    videos = _vector_search(q) if q else []
+    return render_template("search.html", q=q, videos=videos)
+
+
 @app.route("/<slug>")
 def tag_page(slug: str):
     page = max(1, request.args.get("page", 1, type=int))
@@ -233,4 +287,4 @@ def tag_page(slug: str):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5050)
+    app.run(debug=True, port=5053)

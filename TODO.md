@@ -16,11 +16,11 @@ Stack lock-in:
   path, no deploy round-trip.
 - VPS: ONLY Postgres + pipeline + backups. The site never touches VPS at runtime.
 
-1. [ ] **DB contract for site dev (HonoX).** `specs/07-site-db-contract.md`:
+1. [x] **DB contract for site dev (HonoX).** `specs/07-site-db-contract.md`:
        allowed schema, per-table reference, projection WHERE helper, canonical
        queries (homepage, `/tag/:slug`, `/p/:slug`, `/go/:token`). Goal: site
        dev queries the DB without reading pipeline code.
-2. [ ] **HonoX site (local) — MVP surface.** `wrangler dev` against local
+2. [x] **HonoX site (local) — MVP surface.** `wrangler dev` against local
        Docker Postgres (this repo's `docker-compose.yml`), scoped by
        projection slug from env. Page types:
          - `/` — homepage (latest)
@@ -40,16 +40,26 @@ Stack lock-in:
        all migrations applied via SSH tunnel from laptop. **Backups
        deferred** (destination undecided). Hyperdrive access path
        decided in MVP #5 (allowlist egress IPs OR CF Tunnel).
-5. [ ] **Hyperdrive setup** (CF Hyperdrive binding pointing at VPS Postgres,
+5. [x] **Hyperdrive setup** (CF Hyperdrive binding pointing at VPS Postgres,
        site env wiring) + deploy three Workers behind their domains.
-6. [ ] **Smoke check end-to-end** on prod (DB dump+restore on VPS, three
-       projections live behind their domains).
+6. [x] **Smoke check end-to-end** on prod (one projection live behind its
+       domain; remaining two domains + DB dump/restore deferred — see Post-MVP).
 
 ## Post-MVP
 
-- [ ] **Embeddings / vectors** for `cat.videos` (title + tags + description,
-      maybe performers). Spec first (model choice, dimensions, where stored,
-      index type). Schema migration adds `cat.video_embeddings`.
+- [ ] **Deploy remaining two domains** (lustdmilf.com + one of
+      lustdts.com/lustdexxx.com — whichever wasn't first). Same Worker
+      codebase, per-domain projection env. Smoke check each.
+- [ ] **Postgres backup: dump + restore drill.** Pick destination
+      (off-VPS: B2/R2/external box), schedule `pg_dump` (Docker exec),
+      retention policy, test restore into a sibling stack. Until this
+      lands, VPS Postgres is single-copy.
+- [x] **Embeddings / vectors** — MVP slice: trans projection only, 50k newest
+      videos, `multilingual-e5-small` (384 halfvec, HNSW m=16/ef_construction=64).
+      Spec: `specs/08-embeddings.md`. Migration: `011_video_embeddings.sql`.
+      Runner: `python -m pipeline.embeddings.embed_videos --vertical trans
+      --limit 50000`. Other verticals + larger samples = same script, separate
+      runs (table covers all).
 - [ ] **Vector search** endpoint on the site (depends on embeddings).
 - [ ] **Performers canonicalization** — turn `raw.raw_videos.performers_raw`
       text into `cat.performers` + `cat.video_performers` (analogous to tags).
