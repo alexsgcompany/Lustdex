@@ -63,7 +63,7 @@ def _fetch_pending(conn, limit: int | None) -> list[Job]:
         WHERE va.id IS NULL
           AND rv.thumb_url IS NOT NULL
           AND rv.thumb_url <> ''
-        ORDER BY v.id
+        ORDER BY rv.published_at DESC NULLS LAST, v.id DESC
     """
     params: list = [KIND]
     if limit is not None:
