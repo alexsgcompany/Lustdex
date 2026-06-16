@@ -1,4 +1,12 @@
-"""Ingest pipeline for zilla.cash feeds (around-xxx, analdin-com)."""
+"""Ingest pipeline for zilla.cash feeds (around-xxx, analdin-com, xozilla-com, xtits-com).
+
+Pragmatic note on the provider model: zilla.cash is conceptually one provider
+that owns several sites with independent external_id namespaces, but
+cat.videos.UNIQUE(provider_id, external_id) doesn't tolerate that — so each
+zilla.cash site currently lives as its own cat.providers row (slug = site
+slug, name = domain). A proper cat.sites + cat.videos.site_id refactor is in
+TODO Post-MVP; until then `provider` here means `feed source`, not network.
+"""
 
 import argparse
 from datetime import datetime
@@ -12,13 +20,18 @@ from pipeline.common.log import get_logger
 
 log = get_logger(__name__)
 
-PROVIDER_SLUG = "zilla-cash"
-PROVIDER_NAME = "zilla.cash"
-
 _SITES = [
-    {"slug": "around-xxx", "domain": "around.xxx"},
-    {"slug": "analdin-com", "domain": "analdin.com"},
+    {"slug": "around-xxx",  "domain": "around.xxx",  "provider_name": "around.xxx"},
+    {"slug": "analdin-com", "domain": "analdin.com", "provider_name": "analdin.com"},
+    {"slug": "xozilla-com", "domain": "xozilla.com", "provider_name": "xozilla.com"},
+    {"slug": "xtits-com",   "domain": "xtits.com",   "provider_name": "xtits.com"},
 ]
+
+# Shared CSV column spec for /admin/feeds/default/ endpoints (analdin-style).
+_ANALDIN_STYLE_COLS = (
+    "id%7Clink%7Ctitle%7Cdescription%7Ccategories"
+    "%7Cmodels%7Cduration%7Cpost_date%7Cmain_screenshot%7Cembed%7Ccustom1"
+)
 
 _FEEDS = [
     {
@@ -29,6 +42,7 @@ _FEEDS = [
         "max_limit": 999_999_999,
         "niche": "mix",
         "sub_niche": "mix",
+        "supports_category": False,
     },
     {
         "site_slug": "analdin-com",
@@ -36,14 +50,48 @@ _FEEDS = [
             "https://www.analdin.com/admin/feeds/default/"
             "?feed_format=csv&limit={limit}&screenshot_format=source"
             "&csv_separator=%7C"
-            "&csv_columns=id%7Clink%7Ctitle%7Cdescription%7Ccategories"
-            "%7Cmodels%7Cduration%7Cpost_date%7Cmain_screenshot%7Cembed%7Ccustom1"
+            f"&csv_columns={_ANALDIN_STYLE_COLS}"
         ),
         "feed_format": "csv",
         "has_header": False,
         "max_limit": 999_999_999,
         "niche": "mix",
         "sub_niche": "mix",
+        "supports_category": True,  # accepts &category=<slug>&skip=<n>
+    },
+    # mix-sites tapped only for the shemale slice: category_only guards them
+    # from being dumped wholesale by a no-arg run.
+    {
+        "site_slug": "xozilla-com",
+        "feed_url": (
+            "https://www.xozilla.com/admin/feeds/default/"
+            "?feed_format=csv&limit={limit}"
+            "&csv_separator=%7C"
+            f"&csv_columns={_ANALDIN_STYLE_COLS}"
+        ),
+        "feed_format": "csv",
+        "has_header": False,
+        "max_limit": 999_999_999,
+        "niche": "trans",
+        "sub_niche": "trans",
+        "supports_category": True,
+        "category_only": True,
+    },
+    {
+        "site_slug": "xtits-com",
+        "feed_url": (
+            "https://www.xtits.com/admin/feeds/default/"
+            "?feed_format=csv&limit={limit}"
+            "&csv_separator=%7C"
+            f"&csv_columns={_ANALDIN_STYLE_COLS}"
+        ),
+        "feed_format": "csv",
+        "has_header": False,
+        "max_limit": 999_999_999,
+        "niche": "trans",
+        "sub_niche": "trans",
+        "supports_category": True,
+        "category_only": True,
     },
 ]
 
@@ -113,30 +161,41 @@ def _map_analdin(cols: list[str]) -> dict:
 _MAPPERS: dict[str, tuple] = {
     "around-xxx": (_map_around_xxx, 11),
     "analdin-com": (_map_analdin, 11),
+    "xozilla-com": (_map_analdin, 11),
+    "xtits-com": (_map_analdin, 11),
 }
 
 # --- DB seed ---
 
-def _seed_db(conn) -> tuple[int, dict[str, int]]:
-    """Upsert provider/sites/feeds. Returns (provider_id, {site_slug: feed_id})."""
-    provider_id = conn.execute(
-        """
-        INSERT INTO cat.providers (slug, name) VALUES (%s, %s)
-        ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-        RETURNING id
-        """,
-        (PROVIDER_SLUG, PROVIDER_NAME),
-    ).fetchone()[0]
+def _seed_db(conn) -> tuple[dict[str, int], dict[str, int]]:
+    """Upsert per-site provider + site + feed rows.
 
+    Returns ({site_slug: provider_id}, {site_slug: feed_id}).
+
+    Also backfills raw.raw_videos.provider_id and cat.videos.provider_id for
+    rows ingested before the per-site-provider split — old rows pointed at the
+    single 'zilla-cash' provider row, which is no longer used.
+    """
+    site_providers: dict[str, int] = {}
     site_ids: dict[str, int] = {}
     for s in _SITES:
+        site_providers[s["slug"]] = conn.execute(
+            """
+            INSERT INTO cat.providers (slug, name) VALUES (%s, %s)
+            ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
+            """,
+            (s["slug"], s["provider_name"]),
+        ).fetchone()[0]
         site_ids[s["slug"]] = conn.execute(
             """
             INSERT INTO raw.sites (provider_id, slug, domain) VALUES (%s, %s, %s)
-            ON CONFLICT (slug) DO UPDATE SET domain = EXCLUDED.domain
+            ON CONFLICT (slug) DO UPDATE SET
+                provider_id = EXCLUDED.provider_id,
+                domain      = EXCLUDED.domain
             RETURNING id
             """,
-            (provider_id, s["slug"], s["domain"]),
+            (site_providers[s["slug"]], s["slug"], s["domain"]),
         ).fetchone()[0]
 
     feed_ids: dict[str, int] = {}
@@ -157,8 +216,32 @@ def _seed_db(conn) -> tuple[int, dict[str, int]]:
             ),
         ).fetchone()[0]
 
+    # Backfill: relink old rows from the legacy single-provider model.
+    # Idempotent — touches only rows where provider_id is still wrong.
+    backfilled_raw = conn.execute(
+        """
+        UPDATE raw.raw_videos rv
+        SET    provider_id = s.provider_id
+        FROM   raw.feeds f, raw.sites s
+        WHERE  rv.feed_id = f.id
+          AND  f.site_id  = s.id
+          AND  rv.provider_id <> s.provider_id
+        """
+    ).rowcount
+    backfilled_cat = conn.execute(
+        """
+        UPDATE cat.videos cv
+        SET    provider_id = rv.provider_id
+        FROM   raw.raw_videos rv
+        WHERE  cv.id = rv.id
+          AND  cv.provider_id <> rv.provider_id
+        """
+    ).rowcount
+    if backfilled_raw or backfilled_cat:
+        log.info("backfill: raw.raw_videos=%d, cat.videos=%d", backfilled_raw, backfilled_cat)
+
     conn.commit()
-    return provider_id, feed_ids
+    return site_providers, feed_ids
 
 # --- ingest ---
 
@@ -185,11 +268,12 @@ ON CONFLICT (feed_id, external_id) DO UPDATE SET
     fetched_at     = now()
 """
 
-def _ingest_feed(conn, feed_cfg: dict, provider_id: int, feed_id: int, limit: int) -> None:
-    url = feed_cfg["feed_url"].format(limit=limit)
+def _fetch_and_upsert(
+    conn, url: str, feed_cfg: dict, provider_id: int, feed_id: int
+) -> tuple[int, int]:
+    """Fetch one URL, parse CSV, upsert. Returns (parsed_rows, errors)."""
     mapper, expected_cols = _MAPPERS[feed_cfg["site_slug"]]
 
-    log.info("fetch  %s  limit=%d", feed_cfg["site_slug"], limit)
     resp = httpx.get(url, follow_redirects=True, timeout=60)
     resp.raise_for_status()
 
@@ -217,21 +301,61 @@ def _ingest_feed(conn, feed_cfg: dict, provider_id: int, feed_id: int, limit: in
         with conn.cursor() as cur:
             cur.executemany(_UPSERT_SQL, rows)
         conn.commit()
+    return len(rows), errors
 
-    log.info("done   %s  +%d rows, %d errors", feed_cfg["site_slug"], len(rows), errors)
+
+def _ingest_feed(
+    conn, feed_cfg: dict, provider_id: int, feed_id: int,
+    limit: int, category: str | None = None,
+) -> None:
+    site = feed_cfg["site_slug"]
+
+    if category is None:
+        if feed_cfg.get("category_only"):
+            log.info("skip   %s  — category_only, requires --category", site)
+            return
+        url = feed_cfg["feed_url"].format(limit=limit)
+        log.info("fetch  %s  limit=%d", site, limit)
+        n, err = _fetch_and_upsert(conn, url, feed_cfg, provider_id, feed_id)
+        log.info("done   %s  +%d rows, %d errors", site, n, err)
+        return
+
+    if not feed_cfg.get("supports_category"):
+        log.info("skip   %s  — no category filter support", site)
+        return
+
+    # Paginate via &skip until empty. Server caps each window at ~999.
+    skip, total, total_err = 0, 0, 0
+    while True:
+        url = feed_cfg["feed_url"].format(limit=limit) + f"&category={category}&skip={skip}"
+        log.info("fetch  %s  category=%s  skip=%d", site, category, skip)
+        n, err = _fetch_and_upsert(conn, url, feed_cfg, provider_id, feed_id)
+        total += n
+        total_err += err
+        if n == 0:
+            break
+        skip += n
+    log.info("done   %s  category=%s  +%d rows, %d errors", site, category, total, total_err)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest zilla.cash feeds")
     parser.add_argument("--limit", type=int, default=None, help="override max_limit")
+    parser.add_argument(
+        "--category", type=str, default=None,
+        help="filter to a single category (paginates via skip; analdin-com only)",
+    )
     args = parser.parse_args()
 
     with get_conn() as conn:
-        provider_id, feed_ids = _seed_db(conn)
+        site_providers, feed_ids = _seed_db(conn)
         for feed_cfg in _FEEDS:
-            feed_id = feed_ids[feed_cfg["site_slug"]]
+            site_slug = feed_cfg["site_slug"]
             limit = args.limit or feed_cfg["max_limit"]
-            _ingest_feed(conn, feed_cfg, provider_id, feed_id, limit)
+            _ingest_feed(
+                conn, feed_cfg, site_providers[site_slug], feed_ids[site_slug],
+                limit, args.category,
+            )
 
 
 if __name__ == "__main__":
