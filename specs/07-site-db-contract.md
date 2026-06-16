@@ -149,9 +149,32 @@ function projectionWhere(sql, p) {
 }
 ```
 
-**Why this is a WHERE snippet and not a DB view:** views can't take params
-without writing one view per projection (3 now, N later). The WHERE snippet
-keeps `cat.videos` truly canonical.
+### 4.1 Brand-tag filter for `cat.page_candidates`
+
+Every query that reads `cat.page_candidates` MUST also inject the brand filter
+below, so off-brand SEO candidates (e.g. `asian-milf` on a trans-brand site)
+never appear in listings, sitemap, or as resolvable `/p/:slug` targets.
+Page_candidates table MUST be aliased as `pc`.
+
+```sql
+-- Bind: $1 = brand_tag_id (int, nullable)
+( $1::int IS NULL OR $1::int = ANY(pc.member_tag_ids) )
+```
+
+`postgres.js` composition pattern:
+```ts
+function brandTagFilter(sql, p) {
+  return sql`( ${p.brand_tag_id}::int IS NULL OR ${p.brand_tag_id}::int = ANY(pc.member_tag_ids) )`
+}
+```
+
+If a projection has `brand_tag_id IS NULL` the filter is a no-op (all approved
+candidates pass). Setting `brand_tag_id` on a projection is what makes the site
+brand-coherent.
+
+**Why these are WHERE snippets and not DB views:** views can't take params
+without writing one view per projection (3 now, N later). The WHERE snippets
+keep `cat.videos` and `cat.page_candidates` truly canonical.
 
 ---
 
@@ -198,31 +221,32 @@ If `t` is empty → 404. Total count for pagination: same query without
 Two-phase per spec 06 §5: resolve, then projection-count, then render.
 
 **Brand-tag filter (mandatory when `projection.brand_tag_id IS NOT NULL`):** the
-candidate's `member_tag_ids` MUST contain `brand_tag_id`. This is what keeps
-`(asian, milf)` from serving on the trans projection — a shemale-site SEO page
-without `shemale` in the tuple has the wrong search intent. Projections with
-`brand_tag_id IS NULL` (e.g. mix) skip this filter.
+candidate's `member_tag_ids` MUST contain `brand_tag_id` — see §4.1 for the
+snippet. This is what keeps `(asian, milf)` from serving on the trans
+projection: a shemale-site SEO page without `shemale` in the tuple has the
+wrong search intent. Apply it in the resolve query below AND in the sitemap
+query in §5.5. Projections with `brand_tag_id IS NULL` skip this filter.
 
 ```sql
--- 1. Resolve the page candidate (brand-tag filter inlined when applicable)
-SELECT id, member_tag_ids,
-       COALESCE(slug_final, slug_provisional) AS slug,
-       lexical_count, volume
-FROM cat.page_candidates
-WHERE COALESCE(slug_final, slug_provisional) = $1
-  AND status = 'approved'
-  AND ($brand_tag_id::int IS NULL OR $brand_tag_id = ANY(member_tag_ids));
+-- 1. Resolve the page candidate (brand-tag filter via §4.1).
+-- Bind: $1 = slug
+SELECT pc.member_tag_ids
+FROM cat.page_candidates pc
+WHERE COALESCE(pc.slug_final, pc.slug_provisional) = $1
+  AND pc.status = 'approved'
+  AND <brandTagFilter>;
 ```
 
 ```sql
--- 2. Count projection-scoped videos that have ALL the page's member tags
+-- 2. Count projection-scoped videos that have ALL the page's member tags.
+-- Bind: $1 = member_tag_ids (int[])
 SELECT count(*) FROM cat.videos v
 WHERE v.has_thumb = true
   AND v.id IN (
       SELECT vt.video_id FROM cat.video_tags vt
-      WHERE vt.tag_id = ANY($member_tag_ids)
+      WHERE vt.tag_id = ANY($1)
       GROUP BY vt.video_id
-      HAVING count(DISTINCT vt.tag_id) = cardinality($member_tag_ids)
+      HAVING count(DISTINCT vt.tag_id) = cardinality($1)
   )
   AND <projectionWhere>;
 ```
@@ -232,7 +256,8 @@ set `<meta name="robots" content="noindex">`** so the URL is not eligible for
 SEO from this projection's domain.
 
 ```sql
--- 3. Page body (same filter as step 2, full select)
+-- 3. Page body (same member-tag filter as step 2, full select).
+-- Bind: $1 = member_tag_ids (int[]), $2 = offset (int)
 SELECT v.id, v.slug, v.go_token, v.title, v.duration_sec,
        va.path AS thumb_path
 FROM cat.videos v
@@ -240,13 +265,13 @@ LEFT JOIN cat.video_assets va ON va.video_id = v.id AND va.kind = 'thumb'
 WHERE v.has_thumb = true
   AND v.id IN (
       SELECT vt.video_id FROM cat.video_tags vt
-      WHERE vt.tag_id = ANY($member_tag_ids)
+      WHERE vt.tag_id = ANY($1)
       GROUP BY vt.video_id
-      HAVING count(DISTINCT vt.tag_id) = cardinality($member_tag_ids)
+      HAVING count(DISTINCT vt.tag_id) = cardinality($1)
   )
   AND <projectionWhere>
 ORDER BY v.published_at DESC NULLS LAST, v.id DESC
-LIMIT 48 OFFSET $offset;
+LIMIT 48 OFFSET $2;
 ```
 
 `page_candidates.lexical_count` is the GLOBAL count, not projection-scoped —
@@ -270,8 +295,9 @@ the site links to URLs that 404 on render (see spec 06 §5).
 
 - `/tag/{slug}` sitemap: list every `cat.tags.slug` where the projection
   contains ≥ 1 video tagged with it (one count per tag, batchable).
-- `/p/{slug}` sitemap: same projection-count check as 5.3 step 2 per
-  `page_candidates` row; skip rows where count = 0.
+- `/p/{slug}` sitemap: iterate `cat.page_candidates pc` filtered by
+  `<brandTagFilter>` (§4.1), then apply the same projection-count check as 5.3
+  step 2 per row; skip rows where count = 0.
 
 ---
 
