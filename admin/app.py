@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import streamlit as st
-from page_screens import builder
+from page_screens import builder, semantic
 from tags import dictionary, overview, review, runs
 
 import pipeline.common.config  # noqa: F401  loads DATABASE_URL from .env
@@ -25,7 +25,8 @@ _SECTIONS = {
         "Runs":       runs.render,
     },
     "Pages": {
-        "Builder": builder.render,
+        "Builder":  builder.render,
+        "Semantic": semantic.render,
     },
 }
 
