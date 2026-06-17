@@ -47,6 +47,22 @@ Stack lock-in:
 
 ## Post-MVP
 
+- [ ] **Semantic pages: which DB does the admin write to? (BLOCKER).** The
+      admin (`admin/page_screens/semantic.py`) writes to whatever `.env
+      DATABASE_URL` points at — currently the LOCAL Docker Postgres. Pages
+      created in the UI land locally, NOT on prod, so the site 404s until
+      they're synced by hand (which is what happened on 2026-06-17: 18 rows
+      created locally, manually copied + re-snapshotted onto prod via the
+      `-L 15432` tunnel). Decide the workflow before creating more pages:
+        - **A (recommended):** run the admin against prod (`DATABASE_URL`
+          via the SSH tunnel). Create → straight to VPS. Snapshot encoder
+          still runs locally (model lives on the laptop).
+        - **B:** keep creating locally + a sync script (copy inputs, then
+          `refresh --all` on prod so `video_ids` are re-snapshotted against
+          prod embeddings — never carry local `video_ids`, the id-space
+          alignment is not guaranteed).
+      Same question applies to `cat.page_candidates` (Page Builder) — both
+      Pages screens share this local-vs-prod ambiguity.
 - [ ] **Deploy remaining two domains** (lustdmilf.com + one of
       lustdts.com/lustdexxx.com — whichever wasn't first). Same Worker
       codebase, per-domain projection env. Smoke check each.
