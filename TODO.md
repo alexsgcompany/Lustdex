@@ -61,10 +61,14 @@ Stack lock-in:
       --limit 50000`. Other verticals + larger samples = same script, separate
       runs (table covers all).
 - [ ] **Vector search** endpoint on the site (depends on embeddings).
-- [ ] **Performers canonicalization** — turn `raw.raw_videos.performers_raw`
-      text into `cat.performers` + `cat.video_performers` (analogous to tags).
-      Spec first. Required prerequisite for actor pages AND performer-driven
-      `page_candidates` (see below).
+- [ ] **Performers canonicalization (BLOCKER).** Prod DB still has zero
+      canonical performers — only `raw.raw_videos.performers_raw` text. This
+      blocks: (a) actor pages `/actor/:slug`, (b) any performer-driven
+      internal linking (related videos by actor, "more from X" widgets),
+      (c) any performer listing / index page, (d) performer-driven
+      `page_candidates` and `semantic_pages` aliases. Turn `performers_raw`
+      into `cat.performers` + `cat.video_performers` (analogous to tags).
+      Spec first.
 - [ ] **Studios canonicalization** — no studio field exists today (not in
       `cat.tags`, not first-class in `raw.raw_videos`). Needed if we want
       `name-studio` SEO pages. Spec first: where does studio come from
