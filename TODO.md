@@ -92,16 +92,16 @@ Stack lock-in:
       `apply` (fill junction, refresh `n_videos`) →
       `classify_gender` (LLM batch: `{is_person,gender,confidence}`,
       `gender_source='llm'`) + admin override (`gender_source='admin'`).
-      Deterministic from `raw.*` → runs directly on prod; never carry junction
-      ids local→prod (id-space, spec 11 §P10). Verified local: 501 performers,
-      150784 links, gender pass classifies top trans performers correctly.
-      NOTE: floor=100 initial (`--min-videos` lowerable). Run on prod +
-      full gender pass still pending (below).
-- [ ] **Performers: prod rollout + full gender pass.** Apply migration 015 on
-      prod, run `canonicalize`/`apply` against prod (reads prod `raw.*`), then
-      `classify_gender` over all 501 (`deepseek/deepseek-v4-flash`), review
-      low-confidence + `hidden` rows in admin. Lower `--min-videos` later for
-      more coverage.
+      Built + classified entirely **local**; deployed to prod via data-sync
+      (spec 11 §P10 — build local → deploy, one direction; NOT computed on
+      prod). NOTE: floor=100 initial (`--min-videos` lowerable).
+- [x] **Performers: prod rollout + full gender pass.** Done 2026-06-18. Local
+      full gender pass over 501 (`deepseek/deepseek-v4-flash`): 494 trans /
+      4 male / 3 hidden (noise: `Anal Orgasm`/`Pleasure`/`Frenchbaguettes`).
+      Migration 015 applied on prod; the 3 `cat.performer*` tables deployed
+      local→prod via `pg_dump --data-only` + `TRUNCATE…CASCADE` + `pg_restore`
+      (runbook pattern). Verified prod = local: 501/501, 150784 links.
+      Lower `--min-videos` later for more coverage.
 - [ ] **Studios canonicalization** — no studio field exists today (not in
       `cat.tags`, not first-class in `raw.raw_videos`). Needed if we want
       `name-studio` SEO pages. Spec first: where does studio come from

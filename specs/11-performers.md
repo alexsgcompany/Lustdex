@@ -52,7 +52,7 @@ deterministic.
 | P7  | Merge policy | **Exact normalized-key match only** auto-merges. No fuzzy auto-merge in v1 — distinct people with similar names must not collapse silently. Fuzzy/duplicate cleanup is an admin action (Post-MVP). |
 | P8  | Noise handling | LLM pass returns `is_person:false` → performer `status='hidden'` (not rendered, not deleted). Raw stays immutable (rule 2); hiding is a mapping on top. The `MIN_VIDEOS=100` floor already removes most one-off junk. |
 | P9  | Idempotency | Every step upsert / `ON CONFLICT`. `apply` fully rebuilds `cat.video_performers` from the alias join; re-running converges. `n_videos` is a denormalized count refreshed by `apply`. |
-| P10 | Prod workflow | All deterministic steps (collect / canonicalize / apply) run **directly against whichever DB serves** (incl. prod via the `-L 15432` tunnel) — they read `raw.*`, which exists on prod too. **Never carry `cat.video_performers` rows local→prod**: they reference `cat.videos.id`, whose id-space is not aligned across DBs (same lesson as semantic pages S19). `slug` IS stable across DBs, so gender results (keyed by slug) are portable if needed. |
+| P10 | Prod workflow | **Build local → deploy to prod, one direction.** ALL performer data (canonicalize, apply, gender, admin overrides) is produced on the **local** DB. Prod receives it through the **existing data-sync** (pg_dump `--data-only` of `cat.performers` + `cat.performer_aliases` + `cat.video_performers`, restore on prod — the runbook pattern). No script writes performer data directly to prod; the only prod-side step is `db/migrate.py` (DDL). This keeps the invariant **prod = a deployed copy of local**, so a future migration or reset can never lose authored data that exists only on prod. (Semantic pages refresh-on-prod is the *documented exception*, justified by snapshot size; performer tables are small, so they follow the normal sync.) The 3 tables dump/restore together, so junction `video_id` / `performer_id` stay internally consistent. |
 
 **OPEN (defer, not blocking):**
 - O1: fuzzy/alias-merge admin tooling for near-duplicate names.
@@ -168,14 +168,19 @@ gender always wins over LLM. No alias-merge UI in v1 (O1).
 
 ---
 
-## 6. Prod rollout (per P10)
+## 6. Prod rollout (per P10 — build local, deploy to prod)
 
-1. Apply migration 015 on prod (`-L 15432` tunnel, prod creds from
-   `/opt/lustdex/.env` — see prod-db-ops runbook).
-2. Run collect → canonicalize → apply **against prod** (reads prod `raw.*`,
-   writes prod `cat.*`). Deterministic; no data carried from local.
-3. Run classify_gender (LLM) against prod (slug-stable, so could also run local
-   and apply by slug). Review low-confidence rows in admin.
+1. **Local:** `canonicalize` → `apply` → `classify_gender`. Review
+   low-confidence + `hidden` rows in the local admin (admin reads the local DB).
+2. **Migrate prod:** apply migration 015 on prod (`-L 15432` tunnel, prod creds
+   from `/opt/lustdex/.env` — see prod-db-ops runbook). DDL only.
+3. **Deploy data local→prod:** `pg_dump --data-only` of `cat.performers`,
+   `cat.performer_aliases`, `cat.video_performers` from the local container →
+   `TRUNCATE ... RESTART IDENTITY CASCADE` those 3 tables on prod →
+   `pg_restore --data-only --disable-triggers --single-transaction`. Same
+   mechanism as the catalog data-sync (runbook). Idempotent + repeatable: every
+   later re-run of the local pipeline is re-deployed the same way. No LLM or
+   pipeline script ever runs against prod.
 
 ---
 
