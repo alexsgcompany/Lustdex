@@ -84,14 +84,24 @@ Stack lock-in:
       --limit 50000`. Other verticals + larger samples = same script, separate
       runs (table covers all).
 - [ ] **Vector search** endpoint on the site (depends on embeddings).
-- [ ] **Performers canonicalization (BLOCKER).** Prod DB still has zero
-      canonical performers — only `raw.raw_videos.performers_raw` text. This
-      blocks: (a) actor pages `/actor/:slug`, (b) any performer-driven
-      internal linking (related videos by actor, "more from X" widgets),
-      (c) any performer listing / index page, (d) performer-driven
-      `page_candidates` and `semantic_pages` aliases. Turn `performers_raw`
-      into `cat.performers` + `cat.video_performers` (analogous to tags).
-      Spec first.
+- [x] **Performers canonicalization (was BLOCKER).** `specs/11-performers.md`
+      + migration 015. `cat.performers` / `cat.performer_aliases` /
+      `cat.video_performers` (mirrors tags). Pipeline:
+      `canonicalize` (scan raw, promote freq≥100 → 501 performers,
+      exact-normalized merge: `Ts Izzy Wilde`=`Izzy Wilde`) →
+      `apply` (fill junction, refresh `n_videos`) →
+      `classify_gender` (LLM batch: `{is_person,gender,confidence}`,
+      `gender_source='llm'`) + admin override (`gender_source='admin'`).
+      Deterministic from `raw.*` → runs directly on prod; never carry junction
+      ids local→prod (id-space, spec 11 §P10). Verified local: 501 performers,
+      150784 links, gender pass classifies top trans performers correctly.
+      NOTE: floor=100 initial (`--min-videos` lowerable). Run on prod +
+      full gender pass still pending (below).
+- [ ] **Performers: prod rollout + full gender pass.** Apply migration 015 on
+      prod, run `canonicalize`/`apply` against prod (reads prod `raw.*`), then
+      `classify_gender` over all 501 (`deepseek/deepseek-v4-flash`), review
+      low-confidence + `hidden` rows in admin. Lower `--min-videos` later for
+      more coverage.
 - [ ] **Studios canonicalization** — no studio field exists today (not in
       `cat.tags`, not first-class in `raw.raw_videos`). Needed if we want
       `name-studio` SEO pages. Spec first: where does studio come from
