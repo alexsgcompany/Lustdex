@@ -18,12 +18,12 @@ import psycopg
 
 from pipeline.common.db import get_conn
 from pipeline.common.log import get_logger
+from pipeline.semantic_pages.encode import load_model, store_vec
 from pipeline.semantic_pages.refresh import (
     DEFAULT_MODEL,
     EF_SEARCH,
     MAX_DIST,
     TOP_K,
-    pick_device,
     snapshot_one,
 )
 
@@ -72,16 +72,10 @@ def run(args) -> int:
         conn.commit()
         log.info("created id=%d slug=%s status=draft", row_id, slug)
 
-        # §6.1 step 4: snapshot the new row immediately.
-        device = pick_device(args.device)
-        log.info("snapshot device=%s model=%s", device, args.model)
-        from sentence_transformers import SentenceTransformer
-
-        model = SentenceTransformer(args.model, device=device)
-        snapshot_one(
-            conn, model, row_id, args.model,
-            args.top_k, args.max_dist, args.ef_search,
-        )
+        # §6.1 step 4: encode query_vec (laptop), then snapshot (pure SQL).
+        model = load_model(args.model, args.device)
+        store_vec(conn, row_id, model, args.model)
+        snapshot_one(conn, row_id, args.top_k, args.max_dist, args.ef_search)
 
     print(f"id={row_id} slug={slug}")
     return 0

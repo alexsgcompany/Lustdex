@@ -47,7 +47,8 @@ lifecycle. Cost of a second table is the right cost.
 | S15 | Editorial status | `status` enum: `draft` / `approved` / `rejected`. Only `approved` rows render on the site. Newly-created rows default to `draft`. |
 | S16 | No site-search ingestion | `/search` (spec 09) does NOT auto-create `semantic_pages` rows. Operator aggregates GSC/Serpstat/site-search data externally and inserts deliberately. |
 | S17 | Spec 07 compliance | C3 (cat-only schema), C5 (PROJ_WHERE), C7 (CDN composition), C8 (no `target_url` leakage; use `/go/:token`) all apply unchanged. |
-| S18 | Forward-compat with model swap | `embedding_model` column captures which encoder produced the snapshot. CLI compares against current default; mismatched rows are flagged stale and re-snapshot when refresh runs against them. |
+| S18 | Forward-compat with model swap | `embedding_model` column captures which encoder produced `query_vec`. CLI compares against current default; mismatched rows are flagged stale and re-encoded (S19) before the next refresh. |
+| S19 | Stored query vector | `query_vec halfvec(384)` holds the encoded `query_text` (query-side prefix, normalized). Splits the pipeline: **encode** (`query_text → query_vec`, needs the model, laptop-side) is separate from **snapshot** (`query_vec → video_ids`, pure SQL, runs anywhere — incl. prod with no encoder). `query_text` stays the durable source of truth; `query_vec` is derived and re-encoded on model swap. Nullable: rows predating this column carry NULL until backfilled. Unblocks pure-SQL prod refresh (the create-local → sync-to-prod dance is gone) and the §8 related-searches widget. |
 
 ---
 
@@ -69,10 +70,11 @@ CREATE TABLE cat.semantic_pages (
     slug_final       text,
 
     -- frozen result
+    query_vec        halfvec(384),         -- encoded query_text (S19); NULL until encoded
     video_ids        bigint[] NOT NULL,    -- ORDER BY dist ASC
     top_k            int  NOT NULL,        -- TOP_K used at snapshot time
     max_dist         real NOT NULL,        -- threshold used at snapshot time
-    embedding_model  text NOT NULL,        -- which model produced video_ids
+    embedding_model  text NOT NULL,        -- which model produced query_vec
     refreshed_at     timestamptz NOT NULL DEFAULT now(),
 
     -- editorial
@@ -104,29 +106,50 @@ Notes:
   don't want a `STORED` lock-in.
 - `GIN(video_ids)` lets us answer "which semantic pages reference video N"
   for future internal linking from `/watch/:slug`.
+- `query_vec` is added by migration 014 (S19), not 013. It is nullable so the
+  migration is non-destructive on tables with existing rows; backfill via
+  `encode --all-missing`.
 
 ---
 
 ## 4. Snapshot algorithm
 
+Two phases (S19). **Encode** runs once on the laptop (needs the model);
+**snapshot** is pure SQL and re-runnable anywhere, including prod.
+
+### 4a. Encode (laptop, model) — `pipeline.semantic_pages.encode`
+
 ```text
-1. Pull row: query_text, top_k, max_dist
-2. encode = bge.encode("Represent this sentence for searching relevant passages: " + query_text,
-                       normalize=True)
-3. SET LOCAL hnsw.ef_search = 400;
-4. SELECT video_id, embedding <=> $vec AS dist
-   FROM cat.video_embeddings e
-   JOIN cat.videos v ON v.id = e.video_id AND v.has_thumb = true
-   ORDER BY e.embedding <=> $vec
-   LIMIT $top_k
-   -- captured in Python, then filter dist < max_dist client-side
-5. UPDATE cat.semantic_pages
-   SET video_ids = $ids, embedding_model = $current_model,
-       refreshed_at = now()
+1. Pull row: query_text
+2. vec = bge.encode("Represent this sentence for searching relevant passages: " + query_text,
+                    normalize=True)
+3. UPDATE cat.semantic_pages
+   SET query_vec = $vec, embedding_model = $current_model
    WHERE id = $row_id
 ```
 
+### 4b. Snapshot (anywhere, pure SQL) — `pipeline.semantic_pages.refresh`
+
+```text
+1. Skip if query_vec IS NULL (encode first).
+2. SET LOCAL hnsw.ef_search = 400;
+3. WITH q AS (SELECT query_vec FROM cat.semantic_pages WHERE id = $row_id)
+   SELECT video_id, embedding <=> q.query_vec AS dist
+   FROM cat.video_embeddings e
+   JOIN cat.videos v ON v.id = e.video_id AND v.has_thumb = true
+   CROSS JOIN q
+   ORDER BY e.embedding <=> q.query_vec
+   LIMIT $top_k
+   -- captured in Python, then filter dist < max_dist client-side
+4. UPDATE cat.semantic_pages
+   SET video_ids = $ids, refreshed_at = now()
+   WHERE id = $row_id
+   -- embedding_model is NOT touched here; it is set by encode (4a)
+```
+
 Notes:
+- The query vector stays server-side (`WITH q`), so refresh ships no vector
+  over the wire and needs no encoder — the whole point of S19.
 - No `PROJ_WHERE` in the snapshot. Projection is render-time concern (S8); the
   snapshot is the projection-agnostic universe of "videos this query is
   semantically about".
@@ -192,7 +215,9 @@ defeats it.
 
 ## 6. CLI
 
-Lives in `pipeline/semantic_pages/`. Two scripts:
+Lives in `pipeline/semantic_pages/`. Three scripts: `create`, `encode`,
+`refresh`. `create` and `encode` need the model (laptop); `refresh` is pure SQL
+and runs anywhere (incl. prod).
 
 ### 6.1 `create.py` — insert a new row from operator input
 
@@ -209,10 +234,23 @@ Behaviour:
 2. If `UNIQUE(query_text)` collision → log and exit non-zero (operator
    decides whether to update aliases manually).
 3. Insert with empty `video_ids = '{}'`, `status='draft'`, current model.
-4. Immediately call the refresh path (§6.2) on the new row.
+4. Encode `query_vec` (§4a), then snapshot the new row (§4b).
 5. Print resulting id + slug.
 
-### 6.2 `refresh.py` — re-snapshot one / many rows
+### 6.1a `encode.py` — encode query_text → query_vec (laptop, model)
+
+```
+python -m pipeline.semantic_pages.encode --id 42
+python -m pipeline.semantic_pages.encode --all-missing   # query_vec IS NULL
+python -m pipeline.semantic_pages.encode --stale         # embedding_model != default
+```
+
+The only step that loads the encoder for an existing row. Run `--all-missing`
+to backfill rows predating S19; run `--stale` after a model swap. Sets
+`query_vec` + `embedding_model`; does not touch `video_ids` (run `refresh`
+after).
+
+### 6.2 `refresh.py` — re-snapshot one / many rows (pure SQL)
 
 ```
 python -m pipeline.semantic_pages.refresh <id>
@@ -227,9 +265,12 @@ Flags:
 - `--top-k` (default S2 `1000`), `--max-dist` (default S3 `0.40`),
   `--ef-search` (default `400`) — overrides for one-off tuning. Stored
   values on each row are updated to the chosen overrides.
-- `--model` (default S5 `BAAI/bge-small-en-v1.5`) — change with care; whole
-  table goes stale on swap.
+- `--model` (default S5 `BAAI/bge-small-en-v1.5`) — comparison value for
+  `--stale-only` only; refresh never encodes, so it cannot change a row's
+  model (use `encode --stale` for a swap).
 - `--dry-run` — print plan, no UPDATE.
+
+Rows with `query_vec IS NULL` are skipped with a warning — `encode` them first.
 
 Progress to stdout (common/log.py): one line per row (`refreshed id=N
 captured=K kept=K_filtered`), final summary.
@@ -270,10 +311,9 @@ Not implemented in MVP. Sketch only:
 - "More pages mentioning this video" widget on `/watch/:slug`:
   `SELECT * FROM cat.semantic_pages WHERE $video_id = ANY(video_ids) AND status='approved'`
   (uses the `GIN(video_ids)` index).
-- "Related searches" on `/s/:slug`: nearest-neighbour over the `query_text`
-  embeddings of other approved rows. Requires storing the query embedding,
-  which we do NOT do in MVP. Add a second column + small HNSW when this
-  feature lands.
+- "Related searches" on `/s/:slug`: nearest-neighbour over the `query_vec`
+  embeddings of other approved rows. As of S19 the query embedding IS stored
+  (`query_vec`); this widget just needs a small HNSW index on it when it lands.
 
 ---
 
@@ -292,8 +332,8 @@ or two abstract words, or out-of-distribution language) will fall short and
 
 - **Auto-refresh worker / cron.** Manual is enough while the table is
   hand-curated. Revisit when row count grows or operator wants daily freshness.
-- **Page-to-page similarity** (related-searches widget) — needs query
-  embeddings stored.
+- **Page-to-page similarity** (related-searches widget) — `query_vec` is now
+  stored (S19); only the HNSW index over it is deferred.
 - **Site-search auto-ingestion** — operator-curated only for now (S16).
 - **Per-projection snapshots.** Currently one snapshot per query, render-time
   filter. If a projection regularly drops a query below MIN_VIDEOS we may

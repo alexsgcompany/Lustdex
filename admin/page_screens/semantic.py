@@ -10,13 +10,13 @@ import streamlit as st
 
 from pipeline.common.db import get_conn
 from pipeline.semantic_pages.create import INSERT_SQL, SOURCES, kebab
+from pipeline.semantic_pages.encode import load_model, store_vec
 from pipeline.semantic_pages.refresh import (
     DEFAULT_MODEL,
     EF_SEARCH,
     MAX_DIST,
     STALE_DAYS,
     TOP_K,
-    pick_device,
     snapshot_one,
 )
 
@@ -29,7 +29,8 @@ SELECT id,
        COALESCE(array_length(video_ids, 1), 0) AS n_vids,
        refreshed_at, embedding_model,
        (embedding_model != %(model)s
-        OR refreshed_at < now() - make_interval(days => %(days)s)) AS stale
+        OR refreshed_at < now() - make_interval(days => %(days)s)) AS stale,
+       query_vec IS NULL AS needs_encode
 FROM cat.semantic_pages
 {where}
 ORDER BY created_at DESC
@@ -38,14 +39,20 @@ ORDER BY created_at DESC
 
 @st.cache_resource(show_spinner="Loading encoder…")
 def _model():
-    from sentence_transformers import SentenceTransformer
+    return load_model(DEFAULT_MODEL, "auto")
 
-    return SentenceTransformer(DEFAULT_MODEL, device=pick_device("auto"))
+
+def _encode_and_snapshot(row_id: int) -> None:
+    """New row: encode query_vec (needs model), then snapshot (pure SQL)."""
+    with st.spinner("Encoding + snapshotting…"), get_conn() as conn:
+        store_vec(conn, row_id, _model(), DEFAULT_MODEL)
+        snapshot_one(conn, row_id, TOP_K, MAX_DIST, EF_SEARCH)
 
 
 def _snapshot(row_id: int) -> None:
+    """Refresh: pure-SQL re-snapshot from the stored query_vec, no model."""
     with st.spinner("Snapshotting…"), get_conn() as conn:
-        snapshot_one(conn, _model(), row_id, DEFAULT_MODEL, TOP_K, MAX_DIST, EF_SEARCH)
+        snapshot_one(conn, row_id, TOP_K, MAX_DIST, EF_SEARCH)
 
 
 def _set_status(row_id: int, status: str) -> None:
@@ -88,7 +95,7 @@ def render() -> None:
                          TOP_K, MAX_DIST, DEFAULT_MODEL),
                     ).fetchone()[0]
                     conn.commit()
-                _snapshot(rid)
+                _encode_and_snapshot(rid)
                 st.success(f"Created id={rid} slug={slug} (draft). Approve to publish.")
                 st.rerun()
             except psycopg.errors.UniqueViolation:
@@ -111,13 +118,14 @@ def render() -> None:
         return
 
     for (rid, slug, query_text, src, vol, status, n_vids,
-         refreshed_at, model, stale) in rows:
+         refreshed_at, model, stale, needs_encode) in rows:
         icon = _STATUS_ICON.get(status, "❓")
         ts = refreshed_at.strftime("%Y-%m-%d %H:%M") if refreshed_at else "—"
         stale_tag = " ⚠️ stale" if stale else ""
+        encode_tag = " 🔑 needs encode" if needs_encode else ""
         header = (f"{icon} **{query_text}**  ·  `/s/{slug}`  ·  "
                   f"{n_vids} videos  ·  {src}"
-                  + (f" ({vol})" if vol else "") + stale_tag)
+                  + (f" ({vol})" if vol else "") + stale_tag + encode_tag)
 
         with st.expander(header):
             st.caption(f"id={rid}  ·  refreshed {ts}  ·  model {model}")
@@ -130,7 +138,8 @@ def render() -> None:
                 _set_status(rid, "rejected")
                 st.rerun()
             if cols[2].button("Refresh", key=f"refr_{rid}"):
-                _snapshot(rid)
+                # Legacy rows (no query_vec) need an encode pass first.
+                (_encode_and_snapshot if needs_encode else _snapshot)(rid)
                 st.rerun()
             if cols[3].button("Delete", key=f"del_{rid}"):
                 with get_conn() as conn:

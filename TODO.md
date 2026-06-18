@@ -47,22 +47,29 @@ Stack lock-in:
 
 ## Post-MVP
 
-- [ ] **Semantic pages: which DB does the admin write to? (BLOCKER).** The
-      admin (`admin/page_screens/semantic.py`) writes to whatever `.env
-      DATABASE_URL` points at — currently the LOCAL Docker Postgres. Pages
-      created in the UI land locally, NOT on prod, so the site 404s until
-      they're synced by hand (which is what happened on 2026-06-17: 18 rows
-      created locally, manually copied + re-snapshotted onto prod via the
-      `-L 15432` tunnel). Decide the workflow before creating more pages:
-        - **A (recommended):** run the admin against prod (`DATABASE_URL`
-          via the SSH tunnel). Create → straight to VPS. Snapshot encoder
-          still runs locally (model lives on the laptop).
-        - **B:** keep creating locally + a sync script (copy inputs, then
-          `refresh --all` on prod so `video_ids` are re-snapshotted against
-          prod embeddings — never carry local `video_ids`, the id-space
-          alignment is not guaranteed).
-      Same question applies to `cat.page_candidates` (Page Builder) — both
-      Pages screens share this local-vs-prod ambiguity.
+- [x] **Semantic pages: which DB does the admin write to? (was BLOCKER).**
+      Resolved via spec 10 §S19 (migration 014): store the encoded query on
+      the row (`query_vec`), splitting the pipeline into **encode**
+      (`query_text → query_vec`, laptop, model) and **snapshot**
+      (`query_vec → video_ids`, pure SQL, runs anywhere). `query_text` is the
+      durable source of truth; `video_ids` are derived and never carried
+      local→prod. Workflow:
+        1. Author rows on the laptop (CLI `create` or admin) — encodes
+           `query_vec`, snapshots a local preview.
+        2. Carry only the inputs to prod (`query_text`, `aliases`, `source`,
+           `query_vec`) — NOT `video_ids`.
+        3. `python -m pipeline.semantic_pages.refresh --all` on prod
+           (pure SQL, no encoder) → `video_ids` re-snapshotted against prod
+           embeddings, id-space correct.
+      Backfill the 18 legacy prod rows once: `encode --all-missing` (laptop,
+      DATABASE_URL→prod via `-L 15432`) then `refresh --all` on prod.
+      NOTE: `cat.page_candidates` (Page Builder) still has the local-vs-prod
+      ambiguity — its retrieval is tag-SQL, not vector, so it needs its own
+      decision (likely just author-against-prod). Tracked separately below.
+- [ ] **Page Builder (`cat.page_candidates`) local-vs-prod workflow.** Unlike
+      semantic pages, retrieval is a tag join (no encoder), so the simplest
+      fix is to author against prod (`DATABASE_URL` via tunnel) or add a
+      member-id-only sync. Decide before curating more `/p/:slug` pages.
 - [ ] **Deploy remaining two domains** (lustdmilf.com + one of
       lustdts.com/lustdexxx.com — whichever wasn't first). Same Worker
       codebase, per-domain projection env. Smoke check each.
