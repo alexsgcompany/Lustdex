@@ -32,9 +32,17 @@ SELECT
 FROM cat.videos v
 JOIN raw.raw_videos rv ON rv.id = v.id
 WHERE v.vertical = %(vertical)s
+/*only_missing*/
 ORDER BY v.published_at DESC NULLS LAST, v.id DESC
 LIMIT %(limit)s
 """
+
+# Opt-in filter for bulk backfill: skip rows that already have ANY embedding,
+# so successive --limit chunks advance instead of re-scanning the newest slice.
+# Trades off content-update re-embedding (the in-Python hash recheck) for speed.
+ONLY_MISSING_CLAUSE = (
+    "AND NOT EXISTS (SELECT 1 FROM cat.video_embeddings e WHERE e.video_id = v.id)"
+)
 
 UPSERT_SQL = """
 INSERT INTO cat.video_embeddings (video_id, model, embedding, input_hash)
@@ -97,17 +105,22 @@ def chunks(seq, n):
         yield seq[i : i + n]
 
 
-def run(vertical: str, limit: int, batch: int, model_name: str, device: str) -> int:
+def run(vertical: str, limit: int, batch: int, model_name: str, device: str,
+        only_missing: bool = False) -> int:
     device = pick_device(device)
-    log.info("device=%s model=%s vertical=%s limit=%d", device, model_name, vertical, limit)
+    log.info("device=%s model=%s vertical=%s limit=%d only_missing=%s",
+             device, model_name, vertical, limit, only_missing)
 
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_name, device=device)
 
+    sql = SELECT_CANDIDATES_SQL.replace(
+        "/*only_missing*/", ONLY_MISSING_CLAUSE if only_missing else ""
+    )
     with get_conn() as conn:
         rows = conn.execute(
-            SELECT_CANDIDATES_SQL, {"vertical": vertical, "limit": limit}
+            sql, {"vertical": vertical, "limit": limit}
         ).fetchall()
         log.info("candidates: %d", len(rows))
         if not rows:
@@ -165,8 +178,11 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"])
+    ap.add_argument("--only-missing", action="store_true",
+                    help="skip rows that already have an embedding (bulk backfill)")
     args = ap.parse_args()
-    return run(args.vertical, args.limit, args.batch, args.model, args.device)
+    return run(args.vertical, args.limit, args.batch, args.model, args.device,
+               args.only_missing)
 
 
 if __name__ == "__main__":
