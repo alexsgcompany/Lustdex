@@ -1,4 +1,4 @@
-"""Ingest pipeline for adultnext.com feeds (abtranny)."""
+"""Ingest pipeline for adultnext.com feeds (abtranny, abmilf, ablesbian, abjav)."""
 
 import argparse
 from datetime import datetime
@@ -17,6 +17,9 @@ PROVIDER_NAME = "adultnext.com"
 
 _SITES = [
     {"slug": "abtranny", "domain": "abtranny.tube"},
+    {"slug": "abmilf", "domain": "abmilf.net"},
+    {"slug": "ablesbian", "domain": "ablesbian.net"},
+    {"slug": "abjav", "domain": "abjav.tube"},
 ]
 
 _FEEDS = [
@@ -32,6 +35,45 @@ _FEEDS = [
         "max_limit": 999_999_999,
         "niche": "trans",
         "sub_niche": "trans",
+    },
+    {
+        "site_slug": "abmilf",
+        "feed_url": (
+            "https://direct.abmilf.com/feeds/"
+            "?link_args=campaign_id:1656515790"
+            "&feed_format=csv&limit={limit}&csv_separator=%7C"
+        ),
+        "feed_format": "csv",
+        "has_header": True,
+        "max_limit": 999_999_999,
+        "niche": "mix",
+        "sub_niche": "mix",
+    },
+    {
+        "site_slug": "ablesbian",
+        "feed_url": (
+            "https://direct.ablesbian.com/feeds/"
+            "?link_args=campaign_id:423242652"
+            "&feed_format=csv&limit={limit}&csv_separator=%7C"
+        ),
+        "feed_format": "csv",
+        "has_header": True,
+        "max_limit": 999_999_999,
+        "niche": "mix",
+        "sub_niche": "mix",
+    },
+    {
+        "site_slug": "abjav",
+        "feed_url": (
+            "https://direct.abjav.com/feeds/"
+            "?link_args=campaign_id:1311435793"
+            "&feed_format=csv&limit={limit}&csv_separator=%7C"
+        ),
+        "feed_format": "csv",
+        "has_header": True,
+        "max_limit": 999_999_999,
+        "niche": "mix",
+        "sub_niche": "mix",
     },
 ]
 
@@ -60,7 +102,8 @@ def _dt(val: str) -> datetime | None:
 
 # --- row mapper ---
 
-def _map_abtranny(cols: list[str]) -> dict:
+def _map_adultnext(cols: list[str]) -> dict:
+    # All adultnext sites share one 12-col CSV layout:
     # header: ID|Title|Description|Publish date, time|Channel|Website link|
     #         Categories|Models|Duration|Embed code|Main thumbnail|Preview URL
     payload: dict = {}
@@ -84,7 +127,10 @@ def _map_abtranny(cols: list[str]) -> dict:
     }
 
 _MAPPERS: dict[str, tuple] = {
-    "abtranny": (_map_abtranny, 12),
+    "abtranny":  (_map_adultnext, 12),
+    "abmilf":    (_map_adultnext, 12),
+    "ablesbian": (_map_adultnext, 12),
+    "abjav":     (_map_adultnext, 12),
 }
 
 # --- DB seed ---
