@@ -187,6 +187,13 @@ Notes on the seed:
   no MILF-pinned feed (`raw.feeds.niche` ∈ {`trans`, `mix`} only). MILF
   membership is 100% tag-driven from the `mix` pool.
 
+**Update (migration 017):** MILF is now hetero-only. The original "DO NOT
+exclude trans/shemale" choice above is reversed — `milf.exclude_tag_ids =
+{179, 57}` (shemale, gay), matching the `mix` projection's hetero rule. A
+trans-MILF video no longer appears on the MILF site (P10 still allows
+multi-projection membership in general; this is a per-projection editorial
+decision, not a rule change).
+
 ---
 
 ## 7. Migration 008 — what it does
